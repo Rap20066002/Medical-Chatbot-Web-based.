@@ -1,35 +1,46 @@
 # 🏥 Medical Health Assessment System – Web Application
 
-Python-based full-stack Medical Health Assessment System with FastAPI backend,
-Streamlit frontend, MongoDB Atlas, and optional AI-powered symptom analysis.
+Python-based full-stack Medical Health Assessment System with FastAPI backend, Streamlit frontend, MongoDB Atlas, and optional AI-powered symptom analysis.
 
-====================================================
-BADGES
-====================================================
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.29+-red)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
 
-Python 3.10+
-FastAPI
-Streamlit
-MongoDB Atlas
+**Live Demo:** [Your Deployed URL]
 
-Live Demo: <YOUR DEPLOYED URL>
+---
 
-====================================================
-WHAT’S NEW (WEB VERSION)
-====================================================
+## 📋 Table of Contents
 
-• Converted from CLI to full-stack web application
-• Streamlit frontend (no JavaScript required)
-• FastAPI REST backend with JWT authentication
-• Role-based access (Patient / Doctor / Admin)
-• MongoDB Atlas cloud database
-• Production-ready & cloud deployable
-• Responsive UI (desktop + mobile)
+- [What's New](#whats-new)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Field Constraints & Validation](#field-constraints--validation)
+- [Features](#features)
+- [Security](#security)
+- [API Endpoints](#api-endpoints)
+- [Troubleshooting](#troubleshooting)
 
-====================================================
-ARCHITECTURE OVERVIEW
-====================================================
+---
 
+## 🆕 What's New (Web Version)
+
+- ✅ Converted from CLI to full-stack web application
+- ✅ Streamlit frontend (no JavaScript required)
+- ✅ FastAPI REST backend with JWT authentication
+- ✅ Role-based access (Patient / Doctor / Admin)
+- ✅ MongoDB Atlas cloud database
+- ✅ Production-ready & cloud deployable
+- ✅ Responsive UI (desktop + mobile)
+- ✅ User-friendly error messages
+- ✅ Client-side validation
+
+---
+
+## 🏗️ Architecture Overview
+
+```
 User Browser
     |
     | HTTPS
@@ -43,259 +54,580 @@ FastAPI Backend (Port 8000)
     | PyMongo
     v
 MongoDB Atlas (Cloud)
+```
 
-Collections:
-• patients  (AES-256 encrypted)
-• doctors   (approval workflow)
-• admins    (system control)
+**Collections:**
+- `patients` (AES-256 encrypted)
+- `doctors` (approval workflow)
+- `admins` (system control)
 
-====================================================
-QUICK START
-====================================================
+---
 
-PREREQUISITES
-• Python 3.10+
-• Git
-• MongoDB Atlas (free tier)
+## 🚀 Quick Start
 
-----------------------------------------------------
-STEP 1: CLONE REPOSITORY
-----------------------------------------------------
+### Prerequisites
+- Python 3.10+
+- Git
+- MongoDB Atlas account (free tier)
 
-    git clone https://github.com/yourusername/IIS_Project_G13_Web.git
-    cd IIS_Project_G13_Web
+### Step 1: Clone Repository
 
-----------------------------------------------------
-STEP 2: ENVIRONMENT VARIABLES
-----------------------------------------------------
+```bash
+git clone https://github.com/yourusername/IIS_Project_G13_Web.git
+cd IIS_Project_G13_Web
+```
 
-WINDOWS:
-    copy .env.example .env
-    notepad .env
+### Step 2: Environment Variables
 
-LINUX / MAC:
-    cp .env.example .env
-    nano .env
+**Windows:**
+```cmd
+copy .env.example .env
+notepad .env
+```
 
-Required variables:
+**Linux/Mac:**
+```bash
+cp .env.example .env
+nano .env
+```
 
-    MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/
-    MONGODB_DB=health_chatbot_db
-    SECRET_KEY=your-secret-key
-    ENCRYPTION_KEY=your-encryption-key
-    HUGGING_FACE_TOKEN=optional
+**Required variables:**
+```env
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/
+MONGODB_DB=health_chatbot_db
+SECRET_KEY=your-secret-key
+ENCRYPTION_KEY=your-encryption-key
+HUGGING_FACE_TOKEN=optional
+```
 
-----------------------------------------------------
-STEP 3: CREATE VIRTUAL ENVIRONMENT
-----------------------------------------------------
+### Step 3: Virtual Environment
 
-    python -m venv venv
+```bash
+python -m venv venv
+```
 
-----------------------------------------------------
-STEP 4: ACTIVATE VIRTUAL ENVIRONMENT
-----------------------------------------------------
+**Activate:**
+- Windows CMD: `venv\Scripts\activate`
+- Windows PowerShell: `.\venv\Scripts\Activate.ps1`
+- Linux/Mac: `source venv/bin/activate`
 
-WINDOWS (CMD):
-    venv\Scripts\activate
+### Step 4: Install Dependencies
 
-WINDOWS (PowerShell):
-    .\venv\Scripts\Activate.ps1
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+cd ..
 
-LINUX / MAC:
-    source venv/bin/activate
+# Frontend
+cd frontend
+pip install -r requirements.txt
+cd ..
+```
 
-----------------------------------------------------
-STEP 5: INSTALL DEPENDENCIES
-----------------------------------------------------
+### Step 5: Start Application
 
-BACKEND:
-    cd backend
-    pip install -r requirements.txt
-    cd ..
+**Option A (Recommended) - Using Scripts:**
 
-FRONTEND:
-    cd frontend
-    pip install -r requirements.txt
-    cd ..
+Windows:
+```cmd
+start_dev.bat
+```
 
-----------------------------------------------------
-STEP 6: START APPLICATION
-----------------------------------------------------
+Linux/Mac:
+```bash
+chmod +x start_dev.sh
+./start_dev.sh
+```
 
-OPTION A (RECOMMENDED)
+**Option B - Manual:**
 
-WINDOWS:
-    start_dev.bat
+```bash
+# Terminal 1 - Backend
+cd backend
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-LINUX / MAC:
-    chmod +x start_dev.sh
-    ./start_dev.sh
+# Terminal 2 - Frontend
+cd frontend
+streamlit run app.py
+```
 
-OPTION B (MANUAL)
+### Step 6: Access Application
 
-Backend:
-    cd backend
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000
+- **Frontend:** http://localhost:8501
+- **Backend API:** http://localhost:8000
+- **API Docs:** http://localhost:8000/docs
 
-Frontend:
-    cd frontend
-    streamlit run app.py
+---
 
-----------------------------------------------------
-STEP 7: ACCESS APPLICATION
-----------------------------------------------------
+## 📝 Field Constraints & Validation
 
-Frontend:  http://localhost:8501
-Backend:   http://localhost:8000
-API Docs:  http://localhost:8000/docs
+### Email Format (All Users)
 
-====================================================
-FEATURES
-====================================================
+**Required Format:** `username@domain.extension`
 
-PATIENT
-• Register & login
-• View encrypted health records
-• Update profile
-• Chat with AI assistant
-• Multi-language support
+✅ **Valid Examples:**
+```
+patient@example.com
+john.doe@hospital.org
+doctor123@clinic.co.uk
+admin@health-system.com
+```
 
-DOCTOR
-• Secure login
-• View patient data (read-only)
-• AI-assisted insights
+❌ **Invalid Examples:**
+```
+patient@123          # Missing domain extension
+doctor@hospital      # Missing .com, .org, etc.
+admin@               # Missing domain
+@example.com         # Missing username
+patient.com          # Missing @ symbol
+```
 
-ADMIN
-• Approve doctors
-• Manage users
-• View system statistics
+**Validation Rules:**
+- Must contain exactly one `@` symbol
+- Must have username before `@`
+- Must have domain after `@` with at least one period (.)
+- Domain extension must be 2+ characters (e.g., `.com`, `.org`, `.co.uk`)
+- Automatically converted to lowercase
 
-====================================================
-SECURITY
-====================================================
+---
 
-• JWT authentication
-• Role-based authorization
-• Password hashing (bcrypt)
-• AES-256 data encryption
-• HTTPS-ready
-• CORS protection
-• Input validation via Pydantic
+### Password Requirements (All Users)
 
-====================================================
-API ENDPOINTS
-====================================================
+**Minimum Length:** 6 characters
 
-AUTH
-• POST /api/auth/patient/register
-• POST /api/auth/patient/login
-• POST /api/auth/doctor/login
-• POST /api/auth/admin/login
+✅ **Valid Examples:**
+```
+password123
+MyPass123!
+secure@2024
+```
 
-PATIENT
-• GET  /api/patients/me
-• PUT  /api/patients/me
-• POST /api/patients/analyze-symptoms
-• POST /api/patients/chat
+❌ **Invalid Examples:**
+```
+pass        # Too short (< 6 characters)
+12345       # Too short
+abc         # Too short
+```
 
-DOCTOR
-• GET /api/patients
-• GET /api/patients/{id}
-• POST /api/doctors/register
+**Best Practices:**
+- Use mix of uppercase, lowercase, numbers, symbols
+- Avoid common words like "password", "123456"
+- Don't use personal information
 
-ADMIN
-• POST /api/admin/create
-• GET  /api/admin/doctors/pending
-• POST /api/admin/doctors/approve
+---
 
-SYSTEM
-• GET /
-• GET /health
+### Phone Number (Patients)
 
-====================================================
-PROJECT STRUCTURE
-====================================================
+**Minimum:** 10 digits (any format)
 
+✅ **Valid Examples:**
+```
++1234567890
+1234567890
+(123) 456-7890
++91-9876543210
+123-456-7890
+```
+
+❌ **Invalid Examples:**
+```
+123456789       # Only 9 digits
+12345           # Too short
+abc1234567      # Contains letters
+```
+
+**Validation:**
+- Strips all non-digit characters
+- Checks if remaining digits >= 10
+- Accepts international formats
+
+---
+
+### Age (Patients)
+
+**Range:** 0 - 150 years
+
+✅ **Valid:** Any integer from 0 to 150
+
+❌ **Invalid:**
+```
+-5          # Negative
+151         # Above maximum
+abc         # Non-numeric
+25.5        # Decimal (must be integer)
+```
+
+---
+
+### Name Fields (All Users)
+
+**Minimum Length:** 2 characters
+**Maximum Length:** 100 characters
+
+✅ **Valid Examples:**
+```
+John Doe
+Dr. Sarah Smith
+Admin User
+```
+
+❌ **Invalid Examples:**
+```
+J           # Too short (< 2 chars)
+[Empty]     # Required field
+```
+
+---
+
+### Medical License Number (Doctors)
+
+**Format:** Any alphanumeric string
+
+✅ **Valid Examples:**
+```
+MD123456
+DOC-2024-001
+LICENSE789
+```
+
+**Required:** Must not be empty
+
+---
+
+### Specialization (Doctors)
+
+**Format:** Free text
+
+✅ **Valid Examples:**
+```
+Cardiology
+General Surgery
+Pediatrics
+Internal Medicine
+```
+
+**Required:** Must not be empty
+
+---
+
+## 🎯 Registration Guidelines
+
+### Patient Registration
+
+**Required Fields (marked with *):**
+1. Full Name
+2. Age
+3. Email (valid format)
+4. Gender
+5. Phone (10+ digits)
+6. Password (6+ characters)
+7. Main Symptom Name
+8. Symptom Description
+
+**Optional Fields:**
+- Duration, Severity, Frequency, Factors
+- General health questions
+
+**Steps:**
+1. Click "Patient Registration" tab
+2. Fill personal information
+3. Describe your symptoms
+4. Answer health questions (optional)
+5. Click "Complete Registration"
+
+---
+
+### Doctor Registration
+
+**Required Fields:**
+1. Full Name
+2. Email (valid format)
+3. Specialization
+4. Medical License Number
+5. Password (6+ characters)
+6. Confirm Password (must match)
+
+**Process:**
+1. Submit registration form
+2. Wait for admin approval
+3. Receive email notification (if configured)
+4. Login once approved
+
+---
+
+### Admin Registration
+
+**First Admin:**
+- Can be created if no admin exists
+- Requires all fields
+
+**Additional Admins:**
+- Must be created by existing admin
+- Same field requirements
+
+---
+
+## ✨ Features
+
+### For Patients
+- ✅ Register & login
+- ✅ View encrypted health records
+- ✅ Update profile
+- ✅ Chat with AI assistant
+- ✅ Multi-language support
+
+### For Doctors
+- ✅ Secure login
+- ✅ View all patients
+- ✅ Search patients by name/email
+- ✅ View detailed patient records
+- ✅ AI-assisted insights
+
+### For Admins
+- ✅ Approve/reject doctors
+- ✅ Manage user accounts
+- ✅ View system statistics
+- ✅ Create new admins
+
+---
+
+## 🔒 Security
+
+- **JWT Authentication:** Stateless token-based auth
+- **Role-Based Authorization:** Patient/Doctor/Admin roles
+- **Password Hashing:** Bcrypt with auto-salting
+- **AES-256 Encryption:** All patient data encrypted
+- **HTTPS Ready:** TLS 1.3 support
+- **CORS Protection:** Configurable origins
+- **Input Validation:** Pydantic models
+
+---
+
+## 📡 API Endpoints
+
+### Authentication
+```
+POST /api/auth/patient/register     # Patient registration
+POST /api/auth/patient/login        # Patient login
+POST /api/auth/doctor/login         # Doctor login
+POST /api/auth/admin/login          # Admin login
+```
+
+### Patients
+```
+GET  /api/patients/me               # Get current patient
+PUT  /api/patients/me               # Update patient
+POST /api/patients/analyze-symptoms # Analyze symptoms
+POST /api/patients/chat             # Chat with AI
+GET  /api/patients/{id}             # Get patient by ID (doctors)
+GET  /api/patients/                 # List all patients (doctors)
+```
+
+### Doctors
+```
+POST /api/doctors/register          # Doctor registration
+```
+
+### Admin
+```
+POST /api/admin/create              # Create admin
+POST /api/admin/create-first        # Create first admin
+GET  /api/admin/doctors/pending     # Pending approvals
+POST /api/admin/doctors/approve     # Approve/reject doctor
+GET  /api/admin/patients/count      # Patient count
+GET  /api/admin/doctors/count       # Doctor statistics
+```
+
+### System
+```
+GET  /                              # API info
+GET  /health                        # Health check
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Common Errors and Solutions
+
+#### 1. Invalid Email Format
+
+**Error Message:**
+```
+❌ Invalid email format. Please use format: user@example.com
+```
+
+**Solution:**
+- Ensure email has `@` symbol
+- Domain must have extension (`.com`, `.org`, etc.)
+- Example: `patient@hospital.com`
+
+---
+
+#### 2. Password Too Short
+
+**Error Message:**
+```
+❌ Password must be at least 6 characters long
+```
+
+**Solution:**
+- Use 6 or more characters
+- Example: `password123`
+
+---
+
+#### 3. Phone Number Invalid
+
+**Error Message:**
+```
+❌ Phone number must contain at least 10 digits
+```
+
+**Solution:**
+- Include at least 10 digits
+- Format doesn't matter: `+1234567890` or `1234567890` both work
+
+---
+
+#### 4. API Connection Failed
+
+**Error Message:**
+```
+⚠️ Cannot connect to backend API
+```
+
+**Solution:**
+```bash
+# Check if backend is running
+curl http://localhost:8000/health
+
+# Start backend
+cd backend
+uvicorn main:app --reload
+```
+
+---
+
+#### 5. MongoDB Connection Error
+
+**Error Message:**
+```
+❌ MongoDB connection failed
+```
+
+**Solution:**
+1. Check `MONGODB_URI` in `.env`
+2. Verify MongoDB Atlas cluster is running
+3. Whitelist your IP in MongoDB Atlas
+4. Test connection:
+```python
+python -c "from pymongo import MongoClient; MongoClient('YOUR_URI').server_info()"
+```
+
+---
+
+#### 6. Port Already in Use
+
+**Windows:**
+```cmd
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
+
+**Linux/Mac:**
+```bash
+lsof -i :8000
+kill -9 <PID>
+```
+
+---
+
+## 📊 Project Structure
+
+```
 IIS_Project_G13_Web/
 │
 ├── backend/
-│   ├── main.py
+│   ├── main.py                    # FastAPI entry point
 │   ├── api/
+│   │   ├── middleware/
+│   │   │   └── auth.py           # JWT authentication
+│   │   └── routes/
+│   │       ├── auth.py           # Login/register
+│   │       ├── patients.py       # Patient endpoints
+│   │       ├── doctors.py        # Doctor endpoints
+│   │       └── admin.py          # Admin endpoints
 │   ├── core/
+│   │   ├── config.py             # Settings
+│   │   ├── database.py           # MongoDB & encryption
+│   │   └── llm.py                # AI integration
 │   ├── models/
+│   │   └── patient.py            # Pydantic models
 │   └── requirements.txt
 │
 ├── frontend/
-│   ├── app.py
-│   ├── pages/
+│   ├── app.py                    # Streamlit UI
 │   └── requirements.txt
 │
 ├── shared/
-│   └── knowledge_base.json
+│   └── knowledge_base.json       # Medical knowledge
 │
-├── .env.example
-├── start_dev.bat
-├── start_dev.sh
+├── .env.example                  # Environment template
+├── start_dev.bat                 # Windows startup
+├── start_dev.sh                  # Linux/Mac startup
 ├── DEPLOYMENT_GUIDE.md
-└── README_WEB.md
+├── INTERVIEW_PREP_WEB.md
+└── README_WEB.md                 # This file
+```
 
-====================================================
-DEPLOYMENT
-====================================================
+---
 
-OPTION 1: RENDER + STREAMLIT CLOUD
-• Backend → Render Web Service
-• Frontend → Streamlit Cloud
+## 🚢 Deployment
 
-OPTION 2: DOCKER
-    docker-compose up -d
+See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed deployment instructions:
 
-OPTION 3: AWS EC2
-• Ubuntu 22.04
-• Use systemd + Nginx
+- **Option 1:** Render (Backend) + Streamlit Cloud (Frontend)
+- **Option 2:** Docker Compose
+- **Option 3:** AWS EC2
 
-(See DEPLOYMENT_GUIDE.md for full steps)
+---
 
-====================================================
-TROUBLESHOOTING
-====================================================
+## 🗺️ Roadmap
 
-WINDOWS PORT ISSUE:
-    netstat -ano | findstr :8000
-    taskkill /PID <PID> /F
+- [ ] Email verification
+- [ ] Password reset functionality
+- [ ] Two-factor authentication (2FA)
+- [ ] PDF report generation
+- [ ] Appointment scheduling
+- [ ] Video consultations
+- [ ] Mobile app (React Native)
+- [ ] Real-time notifications
+- [ ] Analytics dashboard
 
-LINUX / MAC PORT ISSUE:
-    lsof -i :8000
-    kill -9 <PID>
+---
 
-MONGODB TEST:
-    python -c "from pymongo import MongoClient; MongoClient('URI').server_info()"
+## 📄 License
 
-====================================================
-ROADMAP
-====================================================
+MIT License - See LICENSE file
 
-• Email verification
-• Password reset
-• 2FA
-• PDF reports
-• Appointment scheduling
-• Video consultations
-• Mobile app
+---
 
-====================================================
-LICENSE
-====================================================
+## 🤝 Support
 
-MIT License
+- **Documentation:** [README_WEB.md](README_WEB.md)
+- **Deployment:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+- **Interview Prep:** [INTERVIEW_PREP_WEB.md](INTERVIEW_PREP_WEB.md)
+- **API Docs:** http://localhost:8000/docs
+- **Issues:** GitHub Issues
 
-====================================================
-SUPPORT
-====================================================
+---
 
-GitHub Issues
-API Docs: /docs
+## 📞 Contact
 
-====================================================
-END
-====================================================
+For questions or support, please open an issue on GitHub.
+
+---
+
+**Built with ❤️ using FastAPI, Streamlit, and MongoDB**

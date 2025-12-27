@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from utils.pdf_generator import generate_patient_pdf
 import os
 from dotenv import load_dotenv
 import traceback

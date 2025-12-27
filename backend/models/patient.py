@@ -80,6 +80,7 @@ class SymptomAnalysisRequest(BaseModel):
 class SymptomAnalysisResponse(BaseModel):
     symptoms: List[str]
     questions: List[str]
+    extracted_info: Optional[Dict[str, str]] = None
 
 # Chat Models
 class ChatMessage(BaseModel):
