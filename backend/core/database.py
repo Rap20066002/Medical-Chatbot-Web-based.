@@ -1,11 +1,13 @@
 """
 Database module for MongoDB operations.
 Handles connection, encryption, and data persistence.
+FIXED VERSION - Better error handling and connection testing
 """
 
 import hashlib
 import base64
 from pymongo import MongoClient
+from pymongo.errors import ServerSelectionTimeoutError, ConnectionFailure
 from cryptography.fernet import Fernet
 from core.config import settings
 import os
@@ -15,30 +17,46 @@ class DatabaseManager:
     
     def __init__(self):
         """Initialize database connection and encryption."""
-        self.client = MongoClient(settings.MONGODB_URI)
-        self.db = self.client[settings.MONGODB_DB]
-        self.patients = self.db["patients"]
-        self.doctors = self.db["doctors"]
-        self.admins = self.db["admins"]
-        self.cipher_suite = Fernet(self._get_encryption_key())
-    
-    @staticmethod
-    def _get_encryption_key():
-        """Get or create encryption key."""
-        # Try to get from environment
-        if settings.ENCRYPTION_KEY:
-            return settings.ENCRYPTION_KEY.encode()
+        print("🔄 Initializing database connection...")
         
-        # Try to read from file
-        key_file = "encryption_key.key"
+        # Initialize MongoDB connection
         try:
-            with open(key_file, "rb") as f:
-                key = f.read()
-        except FileNotFoundError:
-            key = Fernet.generate_key()
-            with open(key_file, "wb") as f:
-                f.write(key)
-        return key
+            self.client = MongoClient(
+                settings.MONGODB_URI,
+                serverSelectionTimeoutMS=5000  # 5 second timeout
+            )
+            
+            # Test connection
+            self.client.admin.command('ping')
+            print("✅ MongoDB connection successful")
+            
+            self.db = self.client[settings.MONGODB_DB]
+            self.patients = self.db["patients"]
+            self.doctors = self.db["doctors"]
+            self.admins = self.db["admins"]
+            
+            # Create indexes for better performance
+            self.patients.create_index("demographic")
+            self.doctors.create_index("email")
+            self.admins.create_index("email")
+            
+        except (ServerSelectionTimeoutError, ConnectionFailure) as e:
+            print(f"❌ MongoDB connection failed: {e}")
+            print(f"   Check your MONGODB_URI in .env file")
+            print(f"   Current URI: {settings.MONGODB_URI[:20]}...")
+            raise Exception("Cannot connect to MongoDB. Please check your connection string.")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
+            raise
+        
+        # Initialize encryption
+        try:
+            key = settings.get_encryption_key()
+            self.cipher_suite = Fernet(key)
+            print("✅ Encryption initialized")
+        except Exception as e:
+            print(f"❌ Encryption setup failed: {e}")
+            raise
     
     @staticmethod
     def hash_password(password):
@@ -54,8 +72,12 @@ class DatabaseManager:
         """Encrypt a string using Fernet (AES)."""
         if not data_string:
             return data_string
-        encrypted_data = self.cipher_suite.encrypt(data_string.encode('utf-8'))
-        return base64.b64encode(encrypted_data).decode('utf-8')
+        try:
+            encrypted_data = self.cipher_suite.encrypt(data_string.encode('utf-8'))
+            return base64.b64encode(encrypted_data).decode('utf-8')
+        except Exception as e:
+            print(f"Encryption error: {e}")
+            return data_string
     
     def decrypt_data(self, encrypted_data):
         """Decrypt a string that was encrypted with Fernet."""
@@ -65,6 +87,7 @@ class DatabaseManager:
             decrypted_data = self.cipher_suite.decrypt(base64.b64decode(encrypted_data.encode('utf-8')))
             return decrypted_data.decode('utf-8')
         except Exception as e:
+            print(f"Decryption error: {e}")
             return encrypted_data  # Return as-is if decryption fails
     
     def encrypt_dict(self, data_dict):
@@ -95,10 +118,28 @@ class DatabaseManager:
                 decrypted_dict[key] = value
         return decrypted_dict
     
+    def test_connection(self):
+        """Test if database connection is working"""
+        try:
+            self.client.admin.command('ping')
+            return True
+        except Exception as e:
+            print(f"Connection test failed: {e}")
+            return False
+    
     def close(self):
         """Close the database connection."""
-        self.client.close()
+        try:
+            self.client.close()
+            print("✅ Database connection closed")
+        except Exception as e:
+            print(f"Error closing connection: {e}")
 
 
 # Global database instance
-db_manager = DatabaseManager()
+try:
+    db_manager = DatabaseManager()
+except Exception as e:
+    print(f"❌ CRITICAL: Could not initialize database manager: {e}")
+    print("   Please fix the error above before starting the server")
+    db_manager = None

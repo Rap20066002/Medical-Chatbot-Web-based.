@@ -130,6 +130,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*test_system.py
 
 # Database
 *.db

@@ -1,8 +1,9 @@
 """
 Pydantic models for API request/response validation
+FIXED VERSION - Email validation now accepts simple formats
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, List
 from datetime import datetime
 
@@ -11,8 +12,19 @@ class PatientDemographic(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     age: int = Field(..., ge=0, le=150)
     gender: str = Field(..., min_length=1)
-    email: EmailStr
+    email: str  # Changed from EmailStr to allow flexible format
     phone: str = Field(..., min_length=10)
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """Validate email format - allows simple formats like admin@123"""
+        if '@' not in v:
+            raise ValueError('Email must contain @ symbol')
+        parts = v.split('@')
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError('Invalid email format')
+        return v.lower()
 
 class SymptomDetail(BaseModel):
     Duration: Optional[str] = None
@@ -27,10 +39,26 @@ class PatientCreate(BaseModel):
     gen_questions: Dict[str, str] = Field(alias="Gen_questions")
     password: str = Field(..., min_length=6)
     summary: Optional[str] = None
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        """Ensure password meets requirements"""
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        return v
 
 class PatientLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """Validate email format"""
+        if '@' not in v:
+            raise ValueError('Email must contain @ symbol')
+        return v.lower()
 
 class PatientResponse(BaseModel):
     id: str

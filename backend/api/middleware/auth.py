@@ -1,5 +1,6 @@
 """
 JWT Authentication Middleware
+FIXED VERSION - Resolves bcrypt compatibility issue
 """
 
 from datetime import datetime, timedelta
@@ -7,13 +8,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 
 from core.config import settings
 from models.patient import TokenData
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT Bearer token
 security = HTTPBearer()
@@ -81,9 +79,36 @@ def get_current_admin(token_data: TokenData = Depends(verify_token)) -> TokenDat
     return token_data
 
 def hash_password(password: str) -> str:
-    """Hash password using bcrypt"""
-    return pwd_context.hash(password)
+    """
+    Hash password using bcrypt
+    FIXED: Handles password length limit (72 bytes)
+    """
+    # Truncate password if longer than 72 bytes
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
+    
+    # Generate salt and hash
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    
+    # Return as string
+    return hashed.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    """
+    Verify password against hash
+    FIXED: Handles password length limit
+    """
+    try:
+        # Truncate password if longer than 72 bytes
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) > 72:
+            password_bytes = password_bytes[:72]
+        
+        # Verify
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception as e:
+        print(f"Password verification error: {e}")
+        return False

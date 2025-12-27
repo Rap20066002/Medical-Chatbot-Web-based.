@@ -1,14 +1,15 @@
 """
-FastAPI Backend Entry Point
+FastAPI Backend Entry Point - FIXED VERSION
 Handles all API routes and middleware
 """
 
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +25,6 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting up application...")
     print("📦 Initializing LLM (this may take a moment)...")
-    # LLM is already initialized in llm_manager
     print("✅ Application ready!")
     
     yield
@@ -42,19 +42,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# CORS middleware - MORE PERMISSIVE FOR DEVELOPMENT
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8501",  # Streamlit default
-        "https://*.streamlit.app",  # Streamlit Cloud
-        os.getenv("FRONTEND_URL", "*")
-    ],
+    allow_origins=["*"],  # Allow all origins in development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"❌ ERROR: {str(exc)}")
+    print(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "type": type(exc).__name__
+        }
+    )
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
