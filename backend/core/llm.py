@@ -1,13 +1,13 @@
 """
 LLM (Large Language Model) integration module.
 Handles communication with Mistral model for health assessment.
-FIXED VERSION with proper fallback mechanisms
+FIXED VERSION with correct import path
 """
 
 import json
 import os
 import re
-from config.settings import settings
+from core.config import settings  # FIXED: Changed from config.settings to core.config
 
 class LLMManager:
     """Manages LLM operations for health conversations."""
@@ -46,56 +46,84 @@ class LLMManager:
         try:
             # Try multiple paths
             possible_paths = [
-                "knowledge_base.json",
-                "../knowledge_base.json",
-                "../../knowledge_base.json",
-                "../shared/knowledge_base.json"
+                "shared/knowledge_base.json",
+                "../shared/knowledge_base.json",
+                "../../shared/knowledge_base.json",
+                "backend/shared/knowledge_base.json",
+                "./shared/knowledge_base.json"
             ]
             
             kb_data = None
+            loaded_path = None
+            
             for path in possible_paths:
                 if os.path.exists(path):
-                    with open(path, 'r') as f:
+                    with open(path, 'r', encoding='utf-8') as f:
                         kb_data = json.load(f)
+                        loaded_path = path
                         break
             
-            if kb_data:
-                return kb_data.get("symptoms", [])
+            if kb_data and 'symptoms' in kb_data:
+                symptoms = kb_data.get("symptoms", [])
+                print(f"✅ Loaded {len(symptoms)} symptoms from: {loaded_path}")
+                # Print first few symptoms for verification
+                print(f"   Sample symptoms: {symptoms[:5]}")
+                return symptoms
+            else:
+                print(f"⚠️  Knowledge base found but no 'symptoms' key")
         except Exception as e:
-            print(f"Could not load knowledge base: {e}")
+            print(f"⚠️  Error loading knowledge base: {e}")
         
-        # Fallback symptoms list
-        return [
-            "headache", "fever", "cough", "fatigue", "pain", "nausea",
-            "dizziness", "rash", "vomiting", "diarrhea", "breathing difficulty",
-            "confusion", "memory loss", "weakness", "chest pain", "abdominal pain"
-        ]
+        # Fallback
+        print("⚠️  Using fallback symptom list")
+        return ["headache", "fever", "cough", "pain"]
     
     def get_response(self, prompt):
         """Get a response (fallback version)."""
         return "I'm here to help with your health assessment. Please describe your symptoms in detail."
-    
+        
     def identify_symptoms(self, text):
         """
-        Identify symptoms from patient's free text description using keyword matching.
-        Case-insensitive matching from knowledge base.
+        Identify symptoms from patient's free text description.
         """
         text_lower = text.lower()
         matched_symptoms = []
         
+        print(f"🔍 Analyzing text: {text_lower}")
+        
+        # Check each symptom from knowledge base
         for symptom in self.symptoms_list:
-            if symptom.lower() in text_lower:
-                matched_symptoms.append(symptom)
+            symptom_lower = symptom.lower().strip()
+            
+            # Simple contains check
+            if symptom_lower in text_lower:
+                matched_symptoms.append(symptom_lower)
         
-        # Remove duplicates while preserving order
-        matched_symptoms = list(dict.fromkeys(matched_symptoms))
+        # Remove duplicates
+        matched_symptoms = list(set(matched_symptoms))
         
-        return matched_symptoms if matched_symptoms else ["general health concern"]
+        print(f"🔍 Raw matches: {matched_symptoms}")
+        
+        # If found symptoms, return them
+        if matched_symptoms:
+            # Take only the first word
+            clean_symptoms = []
+            for sym in matched_symptoms:
+                main_word = sym.split()[0]
+                if main_word not in clean_symptoms:
+                    clean_symptoms.append(main_word)
+            
+            print(f"✅ Final symptoms: {clean_symptoms}")
+            return clean_symptoms
+        
+        print(f"⚠️  No symptoms found")
+        return ["general health concern"]
     
+
     def extract_symptom_details(self, text):
         """
         Extract duration, severity, frequency from free-form text.
-        Returns dict with extracted information.
+        Uses knowledge base keywords for better matching.
         """
         text_lower = text.lower()
         details = {}
@@ -105,51 +133,60 @@ class LLMManager:
             r'(\d+\s*(?:day|days|week|weeks|month|months|year|years|hour|hours))',
             r'(since\s+\w+)',
             r'(for\s+(?:the\s+)?(?:past\s+)?(?:last\s+)?\d+\s+\w+)',
+            r'(from\s+\d+\s+\w+)',
             r'(about\s+\d+\s+\w+)'
         ]
         for pattern in duration_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 details["Duration"] = match.group(1).strip()
+                print(f"✅ Extracted Duration: {details['Duration']}")
                 break
         
-        # Extract Severity
+        # Extract Severity (improved with number detection)
         severity_patterns = [
+            r'(\d+)\s*(?:out\s+of|/)\s*10',  # "8/10" or "8 out of 10"
+            r'(\d+)/10',
             r'severity\s*:?\s*(\d+)',
-            r'(\d+)\s*(?:out of|/)\s*10',
-            r'(severe|mild|moderate|extreme|intense|slight)',
-            r'(very\s+\w+)',
-            r'severity\s+(?:of\s+)?(\d+)'
+            r'pain\s*:?\s*(\d+)',
+            r'(severe|mild|moderate|extreme|intense|slight|excruciating|unbearable)'
         ]
         for pattern in severity_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 details["Severity"] = match.group(1).strip()
+                print(f"✅ Extracted Severity: {details['Severity']}")
                 break
         
-        # Extract Frequency
+        # Extract Frequency (improved)
         frequency_patterns = [
-            r'((?:every|each)\s+\w+)',
-            r'((?:once|twice|thrice)\s+(?:a|per|an)?\s*\w+)',
+            r'(daily|everyday|every\s+day)',
+            r'(every\s+morning|in\s+the\s+morning|morning)',
+            r'(every\s+evening|in\s+the\s+evening|evening)',
+            r'(every\s+night|at\s+night|night)',
+            r'(hourly|every\s+hour)',
+            r'(weekly|every\s+week)',
+            r'(constantly|always|frequently|occasionally|rarely)',
             r'(\d+\s+times?\s+(?:a|per)\s+\w+)',
-            r'(constantly|always|frequently|occasionally|rarely|daily|weekly|hourly)',
-            r'(all\s+day|throughout\s+the\s+day)'
+            r'(once|twice|thrice)\s+(?:a|per|an)?\s*(\w+)'
         ]
         for pattern in frequency_patterns:
             match = re.search(pattern, text_lower)
             if match:
-                details["Frequency"] = match.group(1).strip()
+                details["Frequency"] = match.group(0).strip()
+                print(f"✅ Extracted Frequency: {details['Frequency']}")
                 break
         
         # Extract Factors/Triggers
         factor_patterns = [
-            r'(?:worse|triggered|caused|worsens|aggravated)\s+(?:by|when|after)\s+([^.!?]+)',
-            r'(?:better|improves|relieved)\s+(?:by|when|after)\s+([^.!?]+)'
+            r'(?:worse|triggered|caused|worsens|aggravated)\s+(?:by|when|after|with)\s+([^.!?,]+)',
+            r'(?:better|improves|relieved)\s+(?:by|when|after|with)\s+([^.!?,]+)'
         ]
         for pattern in factor_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 details["Factors"] = match.group(1).strip()
+                print(f"✅ Extracted Factors: {details['Factors']}")
                 break
         
         return details

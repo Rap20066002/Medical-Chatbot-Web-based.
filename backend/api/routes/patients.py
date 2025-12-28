@@ -169,11 +169,8 @@ async def update_my_profile(
     return await get_my_profile(token_data)
 
 @router.post("/analyze-symptoms", response_model=SymptomAnalysisResponse)
-async def analyze_symptoms(
-    request: SymptomAnalysisRequest,
-    token_data: TokenData = Depends(get_current_patient)
-):
-    """
+async def analyze_symptoms(request: SymptomAnalysisRequest):
+    """Analyze symptoms - NO AUTH REQUIRED (for registration)
     Analyze patient's symptom description and generate follow-up questions.
     Smart system: extracts duration, severity, frequency from description.
     """
