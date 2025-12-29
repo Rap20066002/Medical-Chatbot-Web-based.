@@ -1,10 +1,10 @@
 """
 Pydantic models for API request/response validation
-FIXED VERSION - Email validation now accepts simple formats
+ENHANCED VERSION - Supports flexible symptom updates
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union, Any
 from datetime import datetime
 
 # Patient Models
@@ -12,13 +12,13 @@ class PatientDemographic(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     age: int = Field(..., ge=0, le=150)
     gender: str = Field(..., min_length=1)
-    email: str  # Changed from EmailStr to allow flexible format
+    email: str
     phone: str = Field(..., min_length=10)
     
     @field_validator('email')
     @classmethod
     def validate_email(cls, v: str) -> str:
-        """Validate email format - allows simple formats like admin@123"""
+        """Validate email format"""
         if '@' not in v:
             raise ValueError('Email must contain @ symbol')
         parts = v.split('@')
@@ -32,6 +32,9 @@ class SymptomDetail(BaseModel):
     Frequency: Optional[str] = None
     Factors: Optional[str] = None
     additional_notes: Optional[str] = Field(None, alias="Additional Notes")
+    
+    class Config:
+        populate_by_name = True  # Allow both 'additional_notes' and 'Additional Notes'
 
 class PatientCreate(BaseModel):
     demographic: PatientDemographic
@@ -68,10 +71,15 @@ class PatientResponse(BaseModel):
     summary: Optional[str] = None
     created_at: Optional[float] = None
 
+# ENHANCED PatientUpdate - Supports flexible symptom format
 class PatientUpdate(BaseModel):
     demographic: Optional[PatientDemographic] = None
-    per_symptom: Optional[Dict[str, SymptomDetail]] = None
+    per_symptom: Optional[Dict[str, Union[SymptomDetail, Dict[str, Any]]]] = None
     gen_questions: Optional[Dict[str, str]] = None
+    
+    class Config:
+        # Allow both Pydantic models and plain dicts for symptoms
+        arbitrary_types_allowed = True
 
 # Symptom Analysis
 class SymptomAnalysisRequest(BaseModel):
@@ -101,7 +109,7 @@ class ChatResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user_type: str  # "patient", "doctor", "admin"
+    user_type: str
     user_id: str
 
 class TokenData(BaseModel):

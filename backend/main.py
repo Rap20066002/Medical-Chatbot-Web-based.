@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from utils.pdf_generator import generate_patient_pdf
+from api.routes import auth, patients, doctors, admin, language
 import os
 from dotenv import load_dotenv
 import traceback
@@ -70,6 +71,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(doctors.router, prefix="/api/doctors", tags=["Doctors"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(language.router, prefix="/api/language", tags=["Language"])
 
 # Health check endpoint
 @app.get("/")

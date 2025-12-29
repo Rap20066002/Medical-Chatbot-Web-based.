@@ -61,12 +61,112 @@ if 'access_token' not in st.session_state:
     st.session_state.access_token = None
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
+if 'current_language' not in st.session_state:
+    st.session_state.current_language = 'en'
+if 'pending_language_change' not in st.session_state:
+    st.session_state.pending_language_change = None
 if 'extracted_info' not in st.session_state:
     st.session_state.extracted_info = {}
 if 'detected_symptoms' not in st.session_state:
     st.session_state.detected_symptoms = []
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+
+
+def translate_text(text, target_lang='en'):
+    """Translate text to target language"""
+    if target_lang == 'en':
+        return text
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/api/language/translate",
+            json={"text": text, "source": "en", "target": target_lang}
+        )
+        if resp.status_code == 200:
+            return resp.json()["translated"]
+    except:
+        pass
+    return text
+
+def detect_language_and_confirm(user_text):
+    """Detect language and show confirmation dialog"""
+    if len(user_text.strip()) < 10:
+        return False
+    
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/api/language/detect",
+            json={"text": user_text}
+        )
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            detected = data["detected"]
+            lang_name = data["language_name"]
+            
+            if data["confidence"] == "high" and detected != st.session_state.current_language:
+                st.session_state.pending_language_change = {
+                    "code": detected,
+                    "name": lang_name
+                }
+                return True
+    except:
+        pass
+    return False
+
+def render_language_confirmation():
+    """Show language change confirmation dialog"""
+    if st.session_state.pending_language_change:
+        lang_info = st.session_state.pending_language_change
+        
+        st.warning(f"🌐 I noticed you're typing in **{lang_info['name']}**")
+        st.info("Would you like to switch to that language?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button(f"✅ Yes, switch to {lang_info['name']}", use_container_width=True):
+                st.session_state.current_language = lang_info['code']
+                st.session_state.pending_language_change = None
+                st.success(f"Switched to {lang_info['name']}!")
+                st.rerun()
+        
+        with col2:
+            if st.button("❌ No, keep current language", use_container_width=True):
+                st.session_state.pending_language_change = None
+                st.info("Continuing in current language")
+                st.rerun()
+
+def render_language_selector():
+    """Manual language selector in sidebar"""
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 🌐 Language")
+        
+        try:
+            resp = requests.get(f"{API_BASE_URL}/api/language/supported")
+            if resp.status_code == 200:
+                langs = resp.json()["languages"]
+                lang_dict = {l["name"]: l["code"] for l in langs}
+                
+                current_name = next(
+                    (n for n, c in lang_dict.items() if c == st.session_state.current_language),
+                    "English"
+                )
+                
+                selected = st.selectbox(
+                    "Select:",
+                    options=list(lang_dict.keys()),
+                    index=list(lang_dict.keys()).index(current_name)
+                )
+                
+                if lang_dict[selected] != st.session_state.current_language:
+                    st.session_state.current_language = lang_dict[selected]
+                    st.success(f"✅ {selected}")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"Language error: {str(e)}")
+
 
 def validate_email(email):
     """Validate email format"""
@@ -420,7 +520,7 @@ def show_dashboard():
         show_admin_dashboard()
 
 def show_patient_dashboard():
-    """PATIENT DASHBOARD with PDF & Chat"""
+    """ENHANCED PATIENT DASHBOARD - Complete Update Section"""
     st.title("👤 Patient Dashboard")
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
     
@@ -433,6 +533,7 @@ def show_patient_dashboard():
         patient_data = resp.json()
         tab1, tab2, tab3, tab4 = st.tabs(["📋 Profile", "🩺 Records", "✏️ Update", "💬 Chat"])
         
+        # === TAB 1: Profile (unchanged) ===
         with tab1:
             st.subheader("Personal Info")
             demo = patient_data["demographic"]
@@ -452,6 +553,7 @@ def show_patient_dashboard():
                     if pdf:
                         st.download_button("💾 Save PDF", pdf, f"{demo['name']}_Report.pdf", "application/pdf")
         
+        # === TAB 2: Records (unchanged) ===
         with tab2:
             st.subheader("Health Records")
             if patient_data.get("summary"):
@@ -463,29 +565,278 @@ def show_patient_dashboard():
                         if v and v != "Not specified":
                             st.write(f"**{k}:** {v}")
         
+        # === TAB 3: ENHANCED UPDATE SECTION ===
         with tab3:
-            st.subheader("Update Information")
-            with st.form("update"):
-                new_desc = st.text_area("New symptoms:", height=100)
-                new_q1 = st.text_input("Chronic conditions:")
-                if st.form_submit_button("💾 Update & Regenerate"):
-                    if new_desc:
+            st.subheader("✏️ Update Your Information")
+            
+            # Use st.radio for section selection instead of expanders
+            update_section = st.radio(
+                "Choose what to update:",
+                ["👤 Demographics", "🩺 Existing Symptoms", "➕ Add New Symptom", "🏥 General Health"],
+                horizontal=True
+            )
+            
+            st.markdown("---")
+            
+            # Section 1: Update Demographics
+            if update_section == "👤 Demographics":
+                st.markdown("### 👤 Update Personal Information")
+                st.info("💡 Update any demographic field below")
+                demo = patient_data["demographic"]
+                
+                with st.form("update_demographics"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_name = st.text_input("Name", value=demo['name'])
+                        new_age = st.number_input("Age", 0, 150, value=int(demo['age']))
+                        new_email = st.text_input("Email", value=demo['email'])
+                    with col2:
+                        new_gender = st.selectbox("Gender", ["Male", "Female", "Other"], 
+                                                index=["Male", "Female", "Other"].index(demo['gender']))
+                        new_phone = st.text_input("Phone", value=demo['phone'])
+                    
+                    if st.form_submit_button("💾 Update Demographics"):
+                        if not validate_email(new_email):
+                            st.error("❌ Invalid email format")
+                        elif not validate_phone(new_phone):
+                            st.error("❌ Invalid phone (need 10+ digits)")
+                        else:
+                            with st.spinner("Updating..."):
+                                try:
+                                    update_payload = {
+                                        "demographic": {
+                                            "name": new_name,
+                                            "age": new_age,
+                                            "gender": new_gender,
+                                            "email": new_email,
+                                            "phone": new_phone
+                                        }
+                                    }
+                                    upd_resp = requests.put(f"{API_BASE_URL}/api/patients/me", headers=headers, json=update_payload)
+                                    if upd_resp.status_code == 200:
+                                        st.success("✅ Demographics updated!")
+                                        st.rerun()
+                                    else:
+                                        st.error(parse_api_error(upd_resp))
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+            
+            # Section 2: Update Existing Symptoms
+            elif update_section == "🩺 Existing Symptoms":
+                st.markdown("### 🩺 Update Existing Symptoms")
+                st.info("💡 Modify details for any symptom below")
+                
+                current_symptoms = patient_data["per_symptom"]
+                
+                if not current_symptoms:
+                    st.warning("No symptoms recorded yet")
+                else:
+                    # Use selectbox to choose which symptom to edit
+                    symptom_to_edit = st.selectbox(
+                        "Select symptom to update:",
+                        list(current_symptoms.keys())
+                    )
+                    
+                    if symptom_to_edit:
+                        symptom_details = current_symptoms[symptom_to_edit]
+                        st.markdown(f"#### Editing: **{symptom_to_edit.upper()}**")
+                        
+                        with st.form(f"update_symptom_{symptom_to_edit}"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                duration = st.text_input("Duration", value=symptom_details.get("Duration", ""))
+                                severity = st.text_input("Severity (1-10)", value=symptom_details.get("Severity", ""))
+                            with col2:
+                                frequency = st.text_input("Frequency", value=symptom_details.get("Frequency", ""))
+                                factors = st.text_input("Triggers/Factors", value=symptom_details.get("Factors", ""))
+                            
+                            additional_notes = st.text_area("Additional Notes", 
+                                                        value=symptom_details.get("Additional Notes", ""),
+                                                        height=100)
+                            
+                            if st.form_submit_button(f"💾 Update {symptom_to_edit}"):
+                                with st.spinner(f"Updating {symptom_to_edit}..."):
+                                    try:
+                                        updated_symptoms = {}
+                                        for sym_name, sym_det in current_symptoms.items():
+                                            if sym_name == symptom_to_edit:
+                                                updated_symptoms[sym_name] = {
+                                                    "Duration": duration,
+                                                    "Severity": severity,
+                                                    "Frequency": frequency,
+                                                    "Factors": factors,
+                                                    "Additional Notes": additional_notes
+                                                }
+                                            else:
+                                                updated_symptoms[sym_name] = sym_det
+                                        
+                                        update_payload = {"per_symptom": updated_symptoms}
+                                        upd_resp = requests.put(f"{API_BASE_URL}/api/patients/me", headers=headers, json=update_payload)
+                                        
+                                        if upd_resp.status_code == 200:
+                                            st.success(f"✅ {symptom_to_edit} updated!")
+                                            st.rerun()
+                                        else:
+                                            st.error(parse_api_error(upd_resp))
+                                    except Exception as e:
+                                        st.error(f"Error: {str(e)}")
+            
+            # Section 3: Add New Symptom
+            elif update_section == "➕ Add New Symptom":
+                st.markdown("### ➕ Add New Symptom")
+                st.info("💡 Describe your new symptom - AI will extract details!")
+                
+                with st.container():
+                    st.markdown("**💡 How to describe symptoms:**")
+                    st.caption("Example: 'I have nausea every morning for the past week, severity 6/10'")
+                    st.caption("AI extracts: symptom, duration, severity, frequency")
+                
+                new_symptom_desc = st.text_area(
+                    "Describe your new symptom",
+                    placeholder="Example: I've been experiencing dizziness for 2 days, happens 3-4 times daily, severity 7/10, worse when standing up quickly",
+                    height=120
+                )
+                
+                if st.button("🔍 Analyze New Symptom"):
+                    if not new_symptom_desc:
+                        st.error("❌ Please describe your symptom")
+                    else:
+                        with st.spinner("🤖 Analyzing..."):
+                            try:
+                                analysis_resp = requests.post(
+                                    f"{API_BASE_URL}/api/patients/me/add-symptom",
+                                    headers=headers,
+                                    json={"description": new_symptom_desc}
+                                )
+                                
+                                if analysis_resp.status_code == 200:
+                                    analysis = analysis_resp.json()
+                                    st.session_state.new_symptom_analysis = analysis
+                                    st.session_state.new_symptom_desc = new_symptom_desc
+                                    st.success("✅ Analysis complete!")
+                                    st.rerun()
+                                else:
+                                    st.error(parse_api_error(analysis_resp))
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+                
+                # Show analysis results
+                if 'new_symptom_analysis' in st.session_state:
+                    analysis = st.session_state.new_symptom_analysis
+                    
+                    st.markdown("#### 🎯 Detected Symptoms")
+                    for sym in analysis['symptoms']:
+                        st.write(f"• **{sym}**")
+                    
+                    st.markdown("#### 📊 Extracted Information")
+                    extracted = analysis.get('extracted_info', {})
+                    if extracted:
+                        for k, v in extracted.items():
+                            st.write(f"• {k}: ✅ **{v}**")
+                    
+                    st.markdown("#### ✍️ Complete Missing Details")
+                    
+                    with st.form("add_new_symptom_form"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            final_duration = st.text_input(
+                                "Duration" + (" ✓" if "Duration" in extracted else " *"),
+                                value=extracted.get("Duration", "")
+                            )
+                            final_severity = st.text_input(
+                                "Severity (1-10)" + (" ✓" if "Severity" in extracted else " *"),
+                                value=extracted.get("Severity", "")
+                            )
+                        with col2:
+                            final_frequency = st.text_input(
+                                "Frequency" + (" ✓" if "Frequency" in extracted else " *"),
+                                value=extracted.get("Frequency", "")
+                            )
+                            final_factors = st.text_input(
+                                "Triggers/Factors" + (" ✓" if "Factors" in extracted else ""),
+                                value=extracted.get("Factors", "")
+                            )
+                        
+                        if st.form_submit_button("✅ Add This Symptom"):
+                            with st.spinner("Adding symptom..."):
+                                try:
+                                    new_symptoms = {}
+                                    
+                                    # Keep all existing symptoms
+                                    for sym_name, sym_det in patient_data["per_symptom"].items():
+                                        new_symptoms[sym_name] = sym_det
+                                    
+                                    # Add new symptom(s)
+                                    for detected_sym in analysis['symptoms']:
+                                        new_symptoms[detected_sym] = {
+                                            "Duration": final_duration,
+                                            "Severity": final_severity,
+                                            "Frequency": final_frequency,
+                                            "Factors": final_factors,
+                                            "Additional Notes": st.session_state.new_symptom_desc
+                                        }
+                                    
+                                    update_payload = {"per_symptom": new_symptoms}
+                                    upd_resp = requests.put(f"{API_BASE_URL}/api/patients/me", headers=headers, json=update_payload)
+                                    
+                                    if upd_resp.status_code == 200:
+                                        st.success("✅ New symptom added! PDF will be regenerated.")
+                                        del st.session_state.new_symptom_analysis
+                                        del st.session_state.new_symptom_desc
+                                        st.balloons()
+                                        st.rerun()
+                                    else:
+                                        st.error(parse_api_error(upd_resp))
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+            
+            # Section 4: Update General Health
+            elif update_section == "🏥 General Health":
+                st.markdown("### 🏥 Update General Health Information")
+                st.info("💡 Update your general health questions")
+                
+                current_questions = patient_data.get("gen_questions", {})
+                
+                with st.form("update_general_health"):
+                    q1 = st.text_input(
+                        "Do you have any chronic health conditions?",
+                        value=current_questions.get("Do you have any chronic health conditions?", "")
+                    )
+                    q2 = st.text_input(
+                        "Are you currently taking any medications?",
+                        value=current_questions.get("Are you currently taking any medications?", "")
+                    )
+                    q3 = st.text_input(
+                        "Have you had any surgeries in the past?",
+                        value=current_questions.get("Have you had any surgeries in the past?", "")
+                    )
+                    q4 = st.text_input(
+                        "Do you have any allergies?",
+                        value=current_questions.get("Do you have any allergies?", "")
+                    )
+                    
+                    if st.form_submit_button("💾 Update Health Info"):
                         with st.spinner("Updating..."):
                             try:
-                                analysis = requests.post(f"{API_BASE_URL}/api/patients/analyze-symptoms", json={"description": new_desc})
-                                if analysis.status_code == 200:
-                                    data = analysis.json()
-                                    new_per = {}
-                                    for s in data['symptoms']:
-                                        new_per[s] = {"Duration": "", "Severity": "", "Frequency": "", "Factors": "", "Additional Notes": new_desc}
-                                    update_data = {"per_symptom": new_per, "gen_questions": {"Do you have any chronic health conditions?": new_q1 or "None", "Are you currently taking any medications?": "None", "Have you had any surgeries in the past?": "None", "Do you have any allergies?": "None"}}
-                                    upd = requests.put(f"{API_BASE_URL}/api/patients/me", headers=headers, json=update_data)
-                                    if upd.status_code == 200:
-                                        st.success("✅ Updated!")
-                                        st.rerun()
+                                update_payload = {
+                                    "gen_questions": {
+                                        "Do you have any chronic health conditions?": q1,
+                                        "Are you currently taking any medications?": q2,
+                                        "Have you had any surgeries in the past?": q3,
+                                        "Do you have any allergies?": q4
+                                    }
+                                }
+                                upd_resp = requests.put(f"{API_BASE_URL}/api/patients/me", headers=headers, json=update_payload)
+                                
+                                if upd_resp.status_code == 200:
+                                    st.success("✅ Health information updated!")
+                                    st.rerun()
+                                else:
+                                    st.error(parse_api_error(upd_resp))
                             except Exception as e:
                                 st.error(f"Error: {str(e)}")
         
+        # === TAB 4: Chat (unchanged) ===
         with tab4:
             st.subheader("💬 Chat Assistant")
             for msg in st.session_state.chat_history:
