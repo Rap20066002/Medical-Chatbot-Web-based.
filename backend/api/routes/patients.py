@@ -14,7 +14,8 @@ from models.patient import (
     SymptomAnalysisResponse,
     TokenData,
     PatientDemographic,
-    SymptomDetail
+    SymptomDetail,
+    PatientUpdate  # ADD THIS LINE - This was missing!
 )
 from api.middleware.auth import get_current_patient, get_current_doctor, hash_password, verify_password
 from core.database import db_manager
@@ -244,6 +245,84 @@ async def update_health_questions(
     )
     
     return {"message": "Health questions updated and summary regenerated successfully"}
+
+# NEW ENDPOINT - For updating entire patient record
+@router.put("/me")
+async def update_patient(
+    update_data: PatientUpdate,
+    token_data: TokenData = Depends(get_current_patient)
+):
+    """Update patient's complete information"""
+    found_patient = None
+    for patient in db_manager.patients.find():
+        try:
+            decrypted_demo = db_manager.decrypt_dict(patient.get("demographic", {}))
+            if decrypted_demo.get("email", "").lower() == token_data.email.lower():
+                found_patient = patient
+                break
+        except:
+            continue
+    
+    if not found_patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found"
+        )
+    
+    update_dict = {}
+    
+    # Update demographic if provided
+    if update_data.demographic:
+        update_dict["demographic"] = db_manager.encrypt_dict(update_data.demographic.dict())
+    
+    # Update symptoms if provided
+    if update_data.per_symptom:
+        per_symptom_dict = {}
+        for symptom_name, symptom_detail in update_data.per_symptom.items():
+            # Handle both SymptomDetail objects and plain dicts
+            if isinstance(symptom_detail, SymptomDetail):
+                per_symptom_dict[symptom_name] = {
+                    "Duration": symptom_detail.Duration or "",
+                    "Severity": symptom_detail.Severity or "",
+                    "Frequency": symptom_detail.Frequency or "",
+                    "Factors": symptom_detail.Factors or "",
+                    "Additional Notes": symptom_detail.additional_notes or ""
+                }
+            else:
+                per_symptom_dict[symptom_name] = symptom_detail
+        
+        update_dict["per_symptom"] = db_manager.encrypt_dict(per_symptom_dict)
+    
+    # Update general questions if provided
+    if update_data.gen_questions:
+        update_dict["Gen_questions"] = db_manager.encrypt_dict(update_data.gen_questions)
+    
+    # Regenerate summary if any health data changed
+    if update_data.per_symptom or update_data.gen_questions:
+        current_data = {
+            "demographic": db_manager.decrypt_dict(
+                update_dict.get("demographic", found_patient["demographic"])
+            ),
+            "per_symptom": db_manager.decrypt_dict(
+                update_dict.get("per_symptom", found_patient["per_symptom"])
+            ),
+            "Gen_questions": db_manager.decrypt_dict(
+                update_dict.get("Gen_questions", found_patient.get("Gen_questions", {}))
+            )
+        }
+        
+        new_summary = llm_manager.summarize_patient_condition(current_data)
+        if new_summary:
+            update_dict["summary"] = db_manager.encrypt_data(new_summary)
+    
+    # Perform update
+    if update_dict:
+        db_manager.patients.update_one(
+            {"_id": found_patient["_id"]},
+            {"$set": update_dict}
+        )
+    
+    return {"message": "Patient information updated successfully"}
 
 @router.post("/me/change-password")
 async def change_password(

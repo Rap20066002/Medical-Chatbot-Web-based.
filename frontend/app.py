@@ -329,85 +329,224 @@ def show_staff_login():
                 st.error(f"❌ Error: {str(e)}")
 
 def show_patient_registration():
-    """FREE-FORM REGISTRATION"""
-    st.subheader("Register as Patient")
-    st.info("📋 Describe your condition - AI will understand!")
+    """FREE-FORM REGISTRATION WITH MULTILINGUAL SUPPORT - FIXED VERSION"""
+    st.subheader("📝 Register as Patient")
     
-    with st.expander("💡 How it works"):
-        st.markdown("""
+    # Show language selector in sidebar
+    render_language_selector()
+    
+    # Show language confirmation if pending
+    render_language_confirmation()
+    
+    # Get current language for translations
+    curr_lang = st.session_state.current_language
+    
+    # Initialize session state for form data persistence
+    if 'reg_form_data' not in st.session_state:
+        st.session_state.reg_form_data = {
+            'name': '',
+            'age': 25,
+            'email': '',
+            'gender': 'Male',
+            'phone': '',
+            'password': '',
+            'symptoms_desc': '',
+            'q1': '',
+            'q2': ''
+        }
+    
+    st.info(translate_text("📋 Describe your condition - AI will understand!", curr_lang))
+    
+    with st.expander(translate_text("💡 How it works", curr_lang)):
+        st.markdown(translate_text("""
         **Just describe your symptoms naturally:**
         - "I have severe headache for 3 days, 8/10 pain, daily in morning"
         - AI extracts: symptom, duration, severity, frequency
         - You only answer missing information
-        """)
+        """, curr_lang))
     
     with st.form("patient_reg"):
-        st.markdown("#### Personal Info")
+        st.markdown(f"#### {translate_text('Personal Info', curr_lang)}")
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Name*")
-            age = st.number_input("Age*", 0, 150, 25)
-            email = st.text_input("Email*")
+            name = st.text_input(
+                translate_text("Name*", curr_lang),
+                value=st.session_state.reg_form_data['name'],
+                key="reg_name"
+            )
+            age = st.number_input(
+                translate_text("Age*", curr_lang),
+                0, 150,
+                value=st.session_state.reg_form_data['age'],
+                key="reg_age"
+            )
+            email = st.text_input(
+                translate_text("Email*", curr_lang),
+                value=st.session_state.reg_form_data['email'],
+                key="reg_email"
+            )
         with col2:
-            gender = st.selectbox("Gender*", ["Male", "Female", "Other"])
-            phone = st.text_input("Phone*")
-            password = st.text_input("Password*", type="password")
+            gender = st.selectbox(
+                translate_text("Gender*", curr_lang), 
+                ["Male", "Female", "Other"],
+                index=["Male", "Female", "Other"].index(st.session_state.reg_form_data['gender']),
+                key="reg_gender"
+            )
+            phone = st.text_input(
+                translate_text("Phone*", curr_lang),
+                value=st.session_state.reg_form_data['phone'],
+                key="reg_phone"
+            )
+            password = st.text_input(
+                translate_text("Password*", curr_lang), 
+                type="password",
+                value=st.session_state.reg_form_data['password'],
+                key="reg_password"
+            )
         
-        st.markdown("#### Describe Your Condition")
+        st.markdown(f"#### {translate_text('Describe Your Condition', curr_lang)}")
         symptoms_desc = st.text_area(
-            "Tell us what you're experiencing*",
-            placeholder="Example: I've had severe headaches for a week, 8/10 pain, every morning, worse with screens",
-            height=150
+            translate_text("Tell us what you're experiencing*", curr_lang),
+            placeholder=translate_text(
+                "Example: I've had severe headaches for a week, 8/10 pain, every morning, worse with screens",
+                curr_lang
+            ),
+            value=st.session_state.reg_form_data['symptoms_desc'],
+            height=150,
+            key="reg_symptoms"
         )
         
-        analyze = st.form_submit_button("🔍 Analyze Description")
+        analyze = st.form_submit_button(
+            translate_text("🔍 Analyze Description", curr_lang)
+        )
         
         if analyze and symptoms_desc:
-            with st.spinner("🤖 Analyzing..."):
+            # Save form data to session state BEFORE language detection
+            st.session_state.reg_form_data.update({
+                'name': name,
+                'age': age,
+                'email': email,
+                'gender': gender,
+                'phone': phone,
+                'password': password,
+                'symptoms_desc': symptoms_desc
+            })
+            
+            # LANGUAGE DETECTION: Check if user typed in non-English
+            if detect_language_and_confirm(symptoms_desc):
+                st.rerun()  # Show language confirmation dialog - data is preserved
+                return
+            
+            # If language already confirmed or is English, proceed with analysis
+            with st.spinner(translate_text("🤖 Analyzing...", curr_lang)):
                 try:
-                    resp = requests.post(f"{API_BASE_URL}/api/patients/analyze-symptoms", json={"description": symptoms_desc})
+                    # Translate symptom description to English for backend processing
+                    symptoms_desc_en = symptoms_desc
+                    if curr_lang != 'en':
+                        translate_resp = requests.post(
+                            f"{API_BASE_URL}/api/language/translate",
+                            json={
+                                "text": symptoms_desc,
+                                "source": curr_lang,
+                                "target": "en"
+                            }
+                        )
+                        if translate_resp.status_code == 200:
+                            symptoms_desc_en = translate_resp.json()["translated"]
+                    
+                    # Analyze symptoms in English
+                    resp = requests.post(
+                        f"{API_BASE_URL}/api/patients/analyze-symptoms",
+                        json={"description": symptoms_desc_en}
+                    )
+                    
                     if resp.status_code == 200:
                         analysis = resp.json()
                         st.session_state.detected_symptoms = analysis['symptoms']
                         st.session_state.extracted_info = analysis.get('extracted_info', {})
-                        st.success("✅ Analysis complete!")
+                        
+                        st.success(translate_text("✅ Analysis complete!", curr_lang))
+                        
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.markdown("**Symptoms:**")
+                            st.markdown(f"**{translate_text('Symptoms:', curr_lang)}**")
                             for s in st.session_state.detected_symptoms:
-                                st.write(f"• {s}")
+                                # Translate symptoms back to user's language
+                                symptom_translated = translate_text(s, curr_lang)
+                                st.write(f"• {symptom_translated}")
                         with col2:
-                            st.markdown("**Extracted:**")
+                            st.markdown(f"**{translate_text('Extracted:', curr_lang)}**")
                             for k, v in st.session_state.extracted_info.items():
-                                st.write(f"• {k}: {v}")
+                                k_translated = translate_text(k, curr_lang)
+                                st.write(f"• {k_translated}: {v}")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         
         if st.session_state.detected_symptoms:
-            st.markdown("#### Fill Missing Info")
+            st.markdown(f"#### {translate_text('Fill Missing Info', curr_lang)}")
             extracted = st.session_state.extracted_info
             col1, col2 = st.columns(2)
             with col1:
-                duration = st.text_input("Duration" + (" ✓" if "Duration" in extracted else ""), value=extracted.get("Duration", ""))
-                severity = st.text_input("Severity" + (" ✓" if "Severity" in extracted else ""), value=extracted.get("Severity", ""))
+                duration = st.text_input(
+                    translate_text("Duration", curr_lang) + 
+                    (" ✓" if "Duration" in extracted else ""),
+                    value=extracted.get("Duration", "")
+                )
+                severity = st.text_input(
+                    translate_text("Severity", curr_lang) + 
+                    (" ✓" if "Severity" in extracted else ""),
+                    value=extracted.get("Severity", "")
+                )
             with col2:
-                frequency = st.text_input("Frequency" + (" ✓" if "Frequency" in extracted else ""), value=extracted.get("Frequency", ""))
-                factors = st.text_input("Factors" + (" ✓" if "Factors" in extracted else ""), value=extracted.get("Factors", ""))
+                frequency = st.text_input(
+                    translate_text("Frequency", curr_lang) + 
+                    (" ✓" if "Frequency" in extracted else ""),
+                    value=extracted.get("Frequency", "")
+                )
+                factors = st.text_input(
+                    translate_text("Factors", curr_lang) + 
+                    (" ✓" if "Factors" in extracted else ""),
+                    value=extracted.get("Factors", "")
+                )
         
-        st.markdown("#### General Health (Optional)")
-        q1 = st.text_input("Chronic conditions?", placeholder="None")
-        q2 = st.text_input("Current medications?", placeholder="None")
+        st.markdown(f"#### {translate_text('General Health (Optional)', curr_lang)}")
+        q1 = st.text_input(
+            translate_text("Chronic conditions?", curr_lang),
+            placeholder=translate_text("None", curr_lang),
+            value=st.session_state.reg_form_data['q1']
+        )
+        q2 = st.text_input(
+            translate_text("Current medications?", curr_lang),
+            placeholder=translate_text("None", curr_lang),
+            value=st.session_state.reg_form_data['q2']
+        )
         
-        submit = st.form_submit_button("✅ Complete Registration")
+        submit = st.form_submit_button(
+            translate_text("✅ Complete Registration", curr_lang)
+        )
         
         if submit:
+            # Save all form data
+            st.session_state.reg_form_data.update({
+                'name': name,
+                'age': age,
+                'email': email,
+                'gender': gender,
+                'phone': phone,
+                'password': password,
+                'symptoms_desc': symptoms_desc,
+                'q1': q1,
+                'q2': q2
+            })
+            
             if not all([name, email, phone, password, symptoms_desc]):
-                st.error("❌ Fill required fields")
+                st.error(translate_text("❌ Fill required fields", curr_lang))
                 return
             if not validate_email(email) or not validate_phone(phone):
-                st.error("❌ Invalid email/phone")
+                st.error(translate_text("❌ Invalid email/phone", curr_lang))
                 return
             
+            # Build symptom data
             per_symptom = {}
             if st.session_state.detected_symptoms:
                 for sym in st.session_state.detected_symptoms:
@@ -419,10 +558,24 @@ def show_patient_registration():
                         "Additional Notes": symptoms_desc
                     }
             else:
-                per_symptom = {"General": {"Duration": "", "Severity": "", "Frequency": "", "Factors": "", "Additional Notes": symptoms_desc}}
+                per_symptom = {
+                    "General": {
+                        "Duration": "",
+                        "Severity": "",
+                        "Frequency": "",
+                        "Factors": "",
+                        "Additional Notes": symptoms_desc
+                    }
+                }
             
             patient_data = {
-                "demographic": {"name": name, "age": age, "gender": gender, "email": email, "phone": phone},
+                "demographic": {
+                    "name": name,
+                    "age": age,
+                    "gender": gender,
+                    "email": email,
+                    "phone": phone
+                },
                 "per_symptom": per_symptom,
                 "Gen_questions": {
                     "Do you have any chronic health conditions?": q1 or "None",
@@ -434,15 +587,28 @@ def show_patient_registration():
             }
             
             try:
-                with st.spinner("Creating account..."):
-                    resp = requests.post(f"{API_BASE_URL}/api/auth/patient/register", json=patient_data, timeout=30)
+                with st.spinner(translate_text("Creating account...", curr_lang)):
+                    resp = requests.post(
+                        f"{API_BASE_URL}/api/auth/patient/register",
+                        json=patient_data,
+                        timeout=30
+                    )
                     if resp.status_code == 200:
                         data = resp.json()
                         st.session_state.logged_in = True
                         st.session_state.user_type = "patient"
                         st.session_state.access_token = data["access_token"]
                         st.session_state.user_email = email
-                        st.success("✅ Registration complete!")
+                        
+                        # Clear form data after successful registration
+                        st.session_state.reg_form_data = {
+                            'name': '', 'age': 25, 'email': '', 'gender': 'Male',
+                            'phone': '', 'password': '', 'symptoms_desc': '', 'q1': '', 'q2': ''
+                        }
+                        st.session_state.detected_symptoms = []
+                        st.session_state.extracted_info = {}
+                        
+                        st.success(translate_text("✅ Registration complete!", curr_lang))
                         st.balloons()
                         st.rerun()
                     else:
@@ -531,7 +697,7 @@ def show_patient_dashboard():
             return
         
         patient_data = resp.json()
-        tab1, tab2, tab3, tab4 = st.tabs(["📋 Profile", "🩺 Records", "✏️ Update", "💬 Chat"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📋 Profile", "🩺 Records", "✏️ Update", "💬 Change Password"])
         
         # === TAB 1: Profile (unchanged) ===
         with tab1:
@@ -836,120 +1002,558 @@ def show_patient_dashboard():
                             except Exception as e:
                                 st.error(f"Error: {str(e)}")
         
-        # === TAB 4: Chat (unchanged) ===
+        # TAB 4: Change Password
         with tab4:
-            st.subheader("💬 Chat Assistant")
-            for msg in st.session_state.chat_history:
-                if msg['role'] == 'user':
-                    st.markdown(f"**You:** {msg['content']}")
-                else:
-                    st.markdown(f"**Assistant:** {msg['content']}")
+            st.subheader("🔐 Change Password")
             
-            user_msg = st.text_input("Message:")
-            if st.button("Send") and user_msg:
-                st.session_state.chat_history.append({"role": "user", "content": user_msg})
-                with st.spinner("Thinking..."):
-                    try:
-                        chat_resp = requests.post(f"{API_BASE_URL}/api/patients/chat", headers=headers, json={"message": user_msg})
-                        if chat_resp.status_code == 200:
-                            bot_msg = chat_resp.json()['response']
-                            st.session_state.chat_history.append({"role": "assistant", "content": bot_msg})
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+            with st.form("change_password"):
+                current_pwd = st.text_input("Current Password", type="password")
+                new_pwd = st.text_input("New Password (6+ chars)", type="password")
+                confirm_pwd = st.text_input("Confirm New Password", type="password")
+                
+                if st.form_submit_button("🔒 Change Password"):
+                    if not all([current_pwd, new_pwd, confirm_pwd]):
+                        st.error("❌ Fill all fields")
+                    elif len(new_pwd) < 6:
+                        st.error("❌ Password must be 6+ characters")
+                    elif new_pwd != confirm_pwd:
+                        st.error("❌ Passwords don't match")
+                    else:
+                        pwd_resp = requests.post(
+                            f"{API_BASE_URL}/api/patients/me/change-password",
+                            headers=headers,
+                            json={
+                                "current_password": current_pwd,
+                                "new_password": new_pwd
+                            }
+                        )
+                        
+                        if pwd_resp.status_code == 200:
+                            st.success("✅ Password changed!")
+                        else:
+                            st.error(parse_api_error(pwd_resp))
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
 
 def show_doctor_dashboard():
-    """DOCTOR DASHBOARD with PDF downloads"""
+    """FIXED DOCTOR DASHBOARD - Proper patient viewing and search"""
     st.title("👨‍⚕️ Doctor Dashboard")
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
     
-    tab1, tab2 = st.tabs(["📊 All Patients", "🔍 Patient Details"])
+    # Initialize session state for selected patient if not exists
+    if 'selected_patient_id' not in st.session_state:
+        st.session_state.selected_patient_id = None
     
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 All Patients", "🔍 Patient Details", "🔐 Change Password", "👤 My Profile"])
+    
+    # TAB 1: All Patients - Show ONLY Demographics
     with tab1:
+        st.subheader("All Registered Patients")
+        st.info("💡 Basic patient information - Click 'Patient Details' tab to view full records")
+        
         try:
             resp = requests.get(f"{API_BASE_URL}/api/patients/", headers=headers)
             if resp.status_code == 200:
                 patients = resp.json()
-                st.success(f"Total: {len(patients)}")
-                for p in patients:
-                    with st.expander(f"{p['name']} - {p.get('email')}"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write(f"Age: {p.get('age')}")
-                        with col2:
-                            if st.button("View Details", key=p['id']):
-                                st.session_state.selected_patient = p['id']
-                                st.rerun()
+                st.success(f"📊 Total Patients: {len(patients)}")
+                
+                if patients:
+                    # Create a table-like display
+                    for idx, p in enumerate(patients, 1):
+                        with st.container():
+                            col1, col2, col3, col4 = st.columns([1, 3, 2, 2])
+                            
+                            with col1:
+                                st.markdown(f"**#{idx}**")
+                            
+                            with col2:
+                                st.markdown(f"**{p['name']}**")
+                                st.caption(f"Age: {p.get('age', 'N/A')} | Gender: {p.get('gender', 'N/A')}")
+                            
+                            with col3:
+                                st.markdown(f"📧 {p.get('email', 'N/A')}")
+                                st.caption(f"📱 {p.get('phone', 'N/A')}")
+                            
+                            with col4:
+                                # Show created date if available
+                                if p.get('created_at'):
+                                    try:
+                                        from datetime import datetime
+                                        created = datetime.fromtimestamp(p['created_at'])
+                                        st.caption(f"Registered: {created.strftime('%Y-%m-%d')}")
+                                    except:
+                                        pass
+                            
+                            st.markdown("---")
+                else:
+                    st.warning("No patients registered yet")
+            else:
+                st.error("Failed to load patients")
+        except Exception as e:
+            st.error(f"Error loading patients: {str(e)}")
+    
+    # TAB 2: Patient Details - Search and View Full Details
+    with tab2:
+        st.subheader("🔍 Search and View Patient Details")
+        
+        # Search section
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            search_name = st.text_input("🔍 Search by Name", placeholder="Enter patient name...")
+        with col2:
+            search_email = st.text_input("📧 Search by Email", placeholder="Enter patient email...")
+        with col3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            search_button = st.button("🔍 Search", use_container_width=True)
+        
+        # Fetch and filter patients
+        try:
+            resp = requests.get(f"{API_BASE_URL}/api/patients/", headers=headers)
+            if resp.status_code == 200:
+                all_patients = resp.json()
+                
+                # Apply filters
+                filtered_patients = all_patients
+                if search_name:
+                    filtered_patients = [p for p in filtered_patients 
+                                       if search_name.lower() in p.get('name', '').lower()]
+                if search_email:
+                    filtered_patients = [p for p in filtered_patients 
+                                       if search_email.lower() in p.get('email', '').lower()]
+                
+                # Display search results
+                if search_button or search_name or search_email:
+                    st.markdown("---")
+                    st.markdown(f"### 📋 Search Results ({len(filtered_patients)} found)")
+                    
+                    if filtered_patients:
+                        for p in filtered_patients:
+                            with st.container():
+                                col1, col2, col3 = st.columns([3, 2, 1])
+                                
+                                with col1:
+                                    st.markdown(f"**👤 {p['name']}**")
+                                    st.caption(f"Age: {p.get('age')} | Gender: {p.get('gender')}")
+                                
+                                with col2:
+                                    st.markdown(f"📧 {p.get('email')}")
+                                    st.caption(f"📱 {p.get('phone')}")
+                                
+                                with col3:
+                                    # Fixed: Use unique key and proper callback
+                                    if st.button("👁️ View Details", key=f"view_{p['id']}", use_container_width=True):
+                                        st.session_state.selected_patient_id = p['id']
+                                        st.rerun()
+                                
+                                st.markdown("---")
+                    else:
+                        st.warning("No patients found matching your search criteria")
+                else:
+                    st.info("👆 Use the search fields above to find a patient")
+                
+                # Display selected patient details
+                if st.session_state.selected_patient_id:
+                    st.markdown("---")
+                    st.markdown("## 📄 Patient Details")
+                    
+                    try:
+                        detail_resp = requests.get(
+                            f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}", 
+                            headers=headers
+                        )
+                        
+                        if detail_resp.status_code == 200:
+                            patient_data = detail_resp.json()
+                            demo = patient_data["demographic"]
+                            
+                            # Patient Header
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(f"### 👤 {demo['name']}")
+                                st.caption(f"Patient ID: {st.session_state.selected_patient_id[-8:].upper()}")
+                            with col2:
+                                if st.button("🔙 Back to Search"):
+                                    st.session_state.selected_patient_id = None
+                                    st.rerun()
+                            
+                            st.markdown("---")
+                            
+                            # Demographics Section
+                            with st.expander("👤 **Demographics**", expanded=True):
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.info(f"**Name:** {demo['name']}")
+                                    st.info(f"**Age:** {demo['age']} years")
+                                    st.info(f"**Gender:** {demo['gender']}")
+                                with col2:
+                                    st.info(f"**Email:** {demo['email']}")
+                                    st.info(f"**Phone:** {demo['phone']}")
+                            
+                            # Clinical Summary
+                            if patient_data.get("summary"):
+                                with st.expander("📋 **Clinical Summary**", expanded=True):
+                                    st.success(patient_data["summary"])
+                            
+                            # Symptoms Section
+                            with st.expander("🩺 **Reported Symptoms**", expanded=True):
+                                symptoms = patient_data.get("per_symptom", {})
+                                if symptoms:
+                                    for idx, (symptom_name, details) in enumerate(symptoms.items(), 1):
+                                        st.markdown(f"#### {idx}. {symptom_name.upper()}")
+                                        
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            if details.get("Duration"):
+                                                st.write(f"⏱️ **Duration:** {details['Duration']}")
+                                            if details.get("Severity"):
+                                                st.write(f"📊 **Severity:** {details['Severity']}")
+                                        with col2:
+                                            if details.get("Frequency"):
+                                                st.write(f"🔄 **Frequency:** {details['Frequency']}")
+                                            if details.get("Factors"):
+                                                st.write(f"⚡ **Triggers/Factors:** {details['Factors']}")
+                                        
+                                        if details.get("Additional Notes"):
+                                            st.write(f"📝 **Notes:** {details['Additional Notes']}")
+                                        
+                                        st.markdown("---")
+                                else:
+                                    st.warning("No symptoms recorded")
+                            
+                            # General Health Questions
+                            with st.expander("🏥 **General Health Information**"):
+                                gen_questions = patient_data.get("gen_questions", {})
+                                if gen_questions:
+                                    for question, answer in gen_questions.items():
+                                        if answer and answer.lower() != "none":
+                                            st.markdown(f"**Q: {question}**")
+                                            st.write(f"A: {answer}")
+                                            st.markdown("")
+                                else:
+                                    st.info("No general health information available")
+                            
+                            # Download PDF Button
+                            st.markdown("---")
+                            col1, col2, col3 = st.columns([1, 1, 1])
+                            with col2:
+                                if st.button("📥 Download PDF Report", use_container_width=True):
+                                    with st.spinner("Generating PDF..."):
+                                        pdf_content = download_pdf(st.session_state.selected_patient_id)
+                                        if pdf_content:
+                                            st.download_button(
+                                                label="💾 Save PDF Report",
+                                                data=pdf_content,
+                                                file_name=f"{demo['name'].replace(' ', '_')}_Health_Report.pdf",
+                                                mime="application/pdf",
+                                                use_container_width=True
+                                            )
+                                        else:
+                                            st.error("Failed to generate PDF")
+                        else:
+                            st.error("Failed to load patient details")
+                            st.session_state.selected_patient_id = None
+                    
+                    except Exception as e:
+                        st.error(f"Error loading patient details: {str(e)}")
+                        st.session_state.selected_patient_id = None
+            else:
+                st.error("Failed to load patients")
+        
         except Exception as e:
             st.error(f"Error: {str(e)}")
     
-    with tab2:
-        if 'selected_patient' in st.session_state:
-            try:
-                detail = requests.get(f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient}", headers=headers)
-                if detail.status_code == 200:
-                    data = detail.json()
-                    st.markdown("### Demographics")
-                    demo = data["demographic"]
-                    st.info(f"Name: {demo['name']}, Age: {demo['age']}")
-                    st.markdown("### Symptoms")
-                    for sym, det in data["per_symptom"].items():
-                        with st.expander(sym):
-                            for k, v in det.items():
-                                st.write(f"**{k}:** {v}")
-                    if st.button("📥 Download PDF"):
-                        pdf = download_pdf(st.session_state.selected_patient)
-                        if pdf:
-                            st.download_button("💾 Save", pdf, f"{demo['name']}_Report.pdf", "application/pdf")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-        else:
-            st.info("Select a patient from the list")
+    # TAB 3: Change Password
+    with tab3:
+        st.subheader("🔐 Change Password")
+        st.info("💡 Update your doctor account password")
+        
+        with st.form("change_password_doctor"):
+            current_pwd = st.text_input("Current Password", type="password")
+            new_pwd = st.text_input("New Password (6+ chars)", type="password")
+            confirm_pwd = st.text_input("Confirm New Password", type="password")
+            
+            if st.form_submit_button("🔒 Change Password"):
+                if not all([current_pwd, new_pwd, confirm_pwd]):
+                    st.error("❌ Fill all fields")
+                elif len(new_pwd) < 6:
+                    st.error("❌ Password must be at least 6 characters")
+                elif new_pwd != confirm_pwd:
+                    st.error("❌ Passwords don't match")
+                else:
+                    try:
+                        pwd_resp = requests.post(
+                            f"{API_BASE_URL}/api/doctors/change-password",
+                            headers=headers,
+                            json={
+                                "current_password": current_pwd,
+                                "new_password": new_pwd
+                            }
+                        )
+                        
+                        if pwd_resp.status_code == 200:
+                            st.success("✅ Password changed successfully!")
+                            st.balloons()
+                        else:
+                            st.error(parse_api_error(pwd_resp))
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+    # TAB 4: Profile
+    with tab4:
+        st.subheader("👤 My Profile")
+        
+        prof_resp = requests.get(f"{API_BASE_URL}/api/doctors/me", headers=headers)
+        
+        if prof_resp.status_code == 200:
+            profile = prof_resp.json()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"**Name:** {profile['name']}")
+                st.info(f"**Email:** {profile['email']}")
+            with col2:
+                st.info(f"**Specialization:** {profile['specialization']}")
+                st.info(f"**License:** {profile['license_number']}")
+            
+            st.info(f"**Status:** {profile['status'].upper()}")
 
 def show_admin_dashboard():
-    """ADMIN DASHBOARD"""
+    """COMPLETE ADMIN DASHBOARD"""
     st.title("🔑 Admin Dashboard")
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
     
-    tab1, tab2 = st.tabs(["📊 Stats", "👨‍⚕️ Doctors"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Stats & Demographics",
+        "✅ Approve Doctors",
+        "👨‍⚕️ Manage Doctors",
+        "➕ Add Admin",
+        "🔐 Change Password"
+    ])
     
+    # TAB 1: Stats & Patient Demographics
     with tab1:
-        try:
-            p_resp = requests.get(f"{API_BASE_URL}/api/admin/patients/count", headers=headers)
-            d_resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/count", headers=headers)
-            if p_resp.status_code == 200:
-                st.metric("Patients", p_resp.json()["count"])
-            if d_resp.status_code == 200:
-                data = d_resp.json()
-                col1, col2 = st.columns(2)
-                col1.metric("Approved Doctors", data["approved"])
-                col2.metric("Pending", data["pending"])
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+        st.subheader("System Statistics")
+        
+        # Get counts
+        p_resp = requests.get(f"{API_BASE_URL}/api/admin/patients/count", headers=headers)
+        d_resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/count", headers=headers)
+        
+        if p_resp.status_code == 200 and d_resp.status_code == 200:
+            p_count = p_resp.json()["count"]
+            d_stats = d_resp.json()
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("👥 Total Patients", p_count)
+            col2.metric("✅ Approved Doctors", d_stats["approved"])
+            col3.metric("⏳ Pending", d_stats["pending"])
+        
+        st.markdown("---")
+        st.subheader("👥 Patient Demographics")
+        
+        # Get all patients with reference IDs
+        patients_resp = requests.get(f"{API_BASE_URL}/api/admin/patients/all", headers=headers)
+        
+        if patients_resp.status_code == 200:
+            patients = patients_resp.json()
+            
+            for i, p in enumerate(patients, 1):
+                with st.expander(f"Patient #{i} (Reference: {p['reference_id']})"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**Name:** {p['name']}")
+                        st.write(f"**Age:** {p['age']}")
+                        st.write(f"**Gender:** {p['gender']}")
+                    with col2:
+                        st.write(f"**Email:** {p['email']}")
+                        st.write(f"**Phone:** {p['phone']}")
     
+    # TAB 2: Approve Doctor Accounts
     with tab2:
-        st.subheader("Manage Doctors")
-        try:
-            resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/all", headers=headers)
-            if resp.status_code == 200:
-                doctors = resp.json()
-                for doc in doctors:
-                    with st.expander(f"{doc['name']} - {doc['status']}"):
-                        st.write(f"Email: {doc['email']}")
-                        st.write(f"Specialization: {doc['specialization']}")
+        st.subheader("✅ Approve Doctor Accounts")
+        
+        pending_resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/pending", headers=headers)
+        
+        if pending_resp.status_code == 200:
+            pending = pending_resp.json()
+            
+            if not pending:
+                st.info("✅ No pending doctor accounts to approve")
+            else:
+                st.warning(f"⏳ {len(pending)} doctor(s) waiting for approval")
+                
+                for doc in pending:
+                    with st.expander(f"Dr. {doc['name']} - {doc['specialization']}"):
+                        st.write(f"**Email:** {doc['email']}")
+                        st.write(f"**License:** {doc['license_number']}")
+                        
                         col1, col2 = st.columns(2)
-                        if doc['status'] == 'pending':
-                            if col1.button("✅ Approve", key=f"app_{doc['id']}"):
-                                requests.post(f"{API_BASE_URL}/api/admin/doctors/approve", headers=headers, json={"doctor_id": doc['id'], "approved": True})
-                                st.rerun()
-                            if col2.button("❌ Reject", key=f"rej_{doc['id']}"):
-                                requests.post(f"{API_BASE_URL}/api/admin/doctors/approve", headers=headers, json={"doctor_id": doc['id'], "approved": False})
-                                st.rerun()
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+                        with col1:
+                            if st.button("✅ Approve", key=f"approve_{doc['id']}"):
+                                approve_resp = requests.post(
+                                    f"{API_BASE_URL}/api/admin/doctors/approve",
+                                    headers=headers,
+                                    json={"doctor_id": doc['id'], "approved": True}
+                                )
+                                
+                                if approve_resp.status_code == 200:
+                                    st.success("✅ Doctor approved!")
+                                    st.rerun()
+                        
+                        with col2:
+                            if st.button("❌ Reject", key=f"reject_{doc['id']}"):
+                                reject_resp = requests.post(
+                                    f"{API_BASE_URL}/api/admin/doctors/approve",
+                                    headers=headers,
+                                    json={"doctor_id": doc['id'], "approved": False}
+                                )
+                                
+                                if reject_resp.status_code == 200:
+                                    st.success("✅ Doctor rejected")
+                                    st.rerun()
+    
+    # TAB 3: Manage Doctor Accounts
+    with tab3:
+        st.subheader("👨‍⚕️ Manage Doctor Accounts")
+        
+        manage_option = st.radio(
+            "Select:",
+            ["View All Doctors", "Search by Name", "Disable/Enable Account"],
+            horizontal=True
+        )
+        
+        if manage_option == "View All Doctors":
+            all_docs_resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/all", headers=headers)
+            
+            if all_docs_resp.status_code == 200:
+                doctors = all_docs_resp.json()
+                
+                for doc in doctors:
+                    status_icon = "🟢" if doc['status'] == "approved" else "🔴"
+                    
+                    with st.expander(f"{status_icon} Dr. {doc['name']} - {doc['email']} ({doc['status'].upper()})"):
+                        st.write(f"**Specialization:** {doc['specialization']}")
+                        st.write(f"**License:** {doc['license_number']}")
+        
+        elif manage_option == "Search by Name":
+            search_name = st.text_input("Enter doctor name:")
+            if st.button("🔍 Search") and search_name:
+                search_resp = requests.get(
+                    f"{API_BASE_URL}/api/admin/doctors/all",
+                    headers=headers,
+                    params={"search_name": search_name}
+                )
+                
+                if search_resp.status_code == 200:
+                    results = search_resp.json()
+                    st.success(f"Found {len(results)} doctor(s)")
+                    
+                    for doc in results:
+                        st.write(f"**{doc['name']}** - {doc['email']} ({doc['status']})")
+        
+        else:  # Disable/Enable
+            all_docs_resp = requests.get(f"{API_BASE_URL}/api/admin/doctors/all", headers=headers)
+            
+            if all_docs_resp.status_code == 200:
+                doctors = all_docs_resp.json()
+                
+                for doc in doctors:
+                    status_icon = "🟢" if doc['status'] == "approved" else "🔴"
+                    
+                    with st.expander(f"{status_icon} Dr. {doc['name']} ({doc['status']})"):
+                        if doc['status'] == "approved":
+                            if st.button(f"🔴 Disable Dr. {doc['name']}", key=f"disable_{doc['id']}"):
+                                confirm = st.checkbox(f"Confirm disable Dr. {doc['name']}?", key=f"confirm_disable_{doc['id']}")
+                                if confirm:
+                                    toggle_resp = requests.post(
+                                        f"{API_BASE_URL}/api/admin/doctors/toggle",
+                                        headers=headers,
+                                        json={"doctor_id": doc['id']}
+                                    )
+                                    
+                                    if toggle_resp.status_code == 200:
+                                        st.success("✅ Doctor disabled")
+                                        st.rerun()
+                        else:
+                            if st.button(f"🟢 Enable Dr. {doc['name']}", key=f"enable_{doc['id']}"):
+                                toggle_resp = requests.post(
+                                    f"{API_BASE_URL}/api/admin/doctors/toggle",
+                                    headers=headers,
+                                    json={"doctor_id": doc['id']}
+                                )
+                                
+                                if toggle_resp.status_code == 200:
+                                    st.success("✅ Doctor enabled")
+                                    st.rerun()
+    
+    # TAB 4: Add Admin Account
+    with tab4:
+        st.subheader("➕ Add New Administrator")
+        
+        with st.form("add_admin"):
+            new_name = st.text_input("Name*")
+            new_email = st.text_input("Email*")
+            new_password = st.text_input("Password* (6+ chars)", type="password")
+            confirm_password = st.text_input("Confirm Password*", type="password")
+            
+            if st.form_submit_button("➕ Create Admin"):
+                if not all([new_name, new_email, new_password]):
+                    st.error("❌ Fill all fields")
+                elif len(new_password) < 6:
+                    st.error("❌ Password must be 6+ characters")
+                elif new_password != confirm_password:
+                    st.error("❌ Passwords don't match")
+                else:
+                    create_resp = requests.post(
+                        f"{API_BASE_URL}/api/admin/create",
+                        headers=headers,
+                        json={
+                            "name": new_name,
+                            "email": new_email,
+                            "password": new_password
+                        }
+                    )
+                    
+                    if create_resp.status_code == 200:
+                        st.success("✅ New admin account created!")
+                    else:
+                        st.error(parse_api_error(create_resp))
+    
+    # TAB 5: Change Password
+    with tab5:  # Adjust tab number as needed
+        st.subheader("🔐 Change Password")
+        st.info("💡 Update your admin account password")
+        
+        with st.form("change_password_admin"):
+            current_pwd = st.text_input("Current Password", type="password")
+            new_pwd = st.text_input("New Password (6+ chars)", type="password")
+            confirm_pwd = st.text_input("Confirm New Password", type="password")
+            
+            if st.form_submit_button("🔒 Change Password"):
+                if not all([current_pwd, new_pwd, confirm_pwd]):
+                    st.error("❌ Fill all fields")
+                elif len(new_pwd) < 6:
+                    st.error("❌ Password must be at least 6 characters")
+                elif new_pwd != confirm_pwd:
+                    st.error("❌ Passwords don't match")
+                else:
+                    try:
+                        pwd_resp = requests.post(
+                            f"{API_BASE_URL}/api/admin/change-password",
+                            headers=headers,
+                            json={
+                                "current_password": current_pwd,
+                                "new_password": new_pwd
+                            }
+                        )
+                        
+                        if pwd_resp.status_code == 200:
+                            st.success("✅ Password changed successfully!")
+                            st.balloons()
+                        else:
+                            st.error(parse_api_error(pwd_resp))
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
