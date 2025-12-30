@@ -329,257 +329,225 @@ def show_staff_login():
                 st.error(f"❌ Error: {str(e)}")
 
 def show_patient_registration():
-    """
-    FIXED REGISTRATION WITH PROPER DETAIL MAPPING
-    Each symptom gets its own details, not shared
-    """
+    """FIXED REGISTRATION WITH FOLLOW-UP QUESTIONS"""
     st.subheader("📝 Register as Patient")
     
-    render_language_selector()
-    render_language_confirmation()
-    
-    curr_lang = st.session_state.current_language
-    
+    # Initialize session state
     if 'reg_form_data' not in st.session_state:
         st.session_state.reg_form_data = {
             'name': '', 'age': 25, 'email': '', 'gender': 'Male',
             'phone': '', 'password': '', 'symptoms_desc': '', 'q1': '', 'q2': ''
         }
     
-    # NEW: Store details per symptom
     if 'symptom_details' not in st.session_state:
         st.session_state.symptom_details = {}
     
-    st.info(translate_text("📋 Describe your condition - AI will understand!", curr_lang))
+    if 'analysis_result' not in st.session_state:
+        st.session_state.analysis_result = None
+    
+    st.info("📋 Describe your condition - AI will understand!")
     
     with st.form("patient_reg"):
-        st.markdown(f"#### {translate_text('Personal Info', curr_lang)}")
+        st.markdown("#### Personal Information")
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input(
-                translate_text("Name*", curr_lang),
-                value=st.session_state.reg_form_data['name'],
-                key="reg_name"
-            )
-            age = st.number_input(
-                translate_text("Age*", curr_lang),
-                0, 150,
-                value=st.session_state.reg_form_data['age'],
-                key="reg_age"
-            )
-            email = st.text_input(
-                translate_text("Email*", curr_lang),
-                value=st.session_state.reg_form_data['email'],
-                key="reg_email"
-            )
+            name = st.text_input("Name*", value=st.session_state.reg_form_data['name'])
+            age = st.number_input("Age*", 0, 150, value=st.session_state.reg_form_data['age'])
+            email = st.text_input("Email*", value=st.session_state.reg_form_data['email'])
         with col2:
-            gender = st.selectbox(
-                translate_text("Gender*", curr_lang), 
-                ["Male", "Female", "Other"],
-                index=["Male", "Female", "Other"].index(st.session_state.reg_form_data['gender']),
-                key="reg_gender"
-            )
-            phone = st.text_input(
-                translate_text("Phone*", curr_lang),
-                value=st.session_state.reg_form_data['phone'],
-                key="reg_phone"
-            )
-            password = st.text_input(
-                translate_text("Password*", curr_lang), 
-                type="password",
-                value=st.session_state.reg_form_data['password'],
-                key="reg_password"
-            )
+            gender = st.selectbox("Gender*", ["Male", "Female", "Other"],
+                                index=["Male", "Female", "Other"].index(st.session_state.reg_form_data['gender']))
+            phone = st.text_input("Phone*", value=st.session_state.reg_form_data['phone'])
+            password = st.text_input("Password* (6+ chars)", type="password",
+                                   value=st.session_state.reg_form_data['password'])
         
-        st.markdown(f"#### {translate_text('Describe Your Condition', curr_lang)}")
+        st.markdown("#### Describe Your Condition")
         symptoms_desc = st.text_area(
-            translate_text("Tell us what you're experiencing*", curr_lang),
-            placeholder=translate_text(
-                "Example: I've had severe headaches for a week, 8/10 pain, every morning, worse with screens",
-                curr_lang
-            ),
+            "Tell us what you're experiencing*",
+            placeholder="Example: I've had severe headaches for a week, 8/10 pain, every morning, worse with screens",
             value=st.session_state.reg_form_data['symptoms_desc'],
-            height=150,
-            key="reg_symptoms"
+            height=120
         )
         
-        analyze = st.form_submit_button(
-            translate_text("🔍 Analyze Description", curr_lang)
-        )
+        analyze = st.form_submit_button("🔍 Analyze My Symptoms")
         
+        # === ANALYSIS SECTION ===
         if analyze and symptoms_desc:
             st.session_state.reg_form_data.update({
                 'name': name, 'age': age, 'email': email, 'gender': gender,
                 'phone': phone, 'password': password, 'symptoms_desc': symptoms_desc
             })
             
-            if detect_language_and_confirm(symptoms_desc):
-                st.rerun()
-                return
-            
-            with st.spinner(translate_text("🤖 Analyzing...", curr_lang)):
+            with st.spinner("🤖 Analyzing your description..."):
                 try:
-                    symptoms_desc_en = symptoms_desc
-                    if curr_lang != 'en':
-                        translate_resp = requests.post(
-                            f"{API_BASE_URL}/api/language/translate",
-                            json={"text": symptoms_desc, "source": curr_lang, "target": "en"}
-                        )
-                        if translate_resp.status_code == 200:
-                            symptoms_desc_en = translate_resp.json()["translated"]
-                    
                     resp = requests.post(
                         f"{API_BASE_URL}/api/patients/analyze-symptoms",
-                        json={"description": symptoms_desc_en}
+                        json={"description": symptoms_desc}
                     )
                     
                     if resp.status_code == 200:
                         analysis = resp.json()
-                        st.session_state.detected_symptoms = analysis['symptoms']
-                        st.session_state.extracted_info = analysis.get('extracted_info', {})
+                        st.session_state.analysis_result = analysis
                         
-                        # CRITICAL FIX: Initialize details for EACH symptom separately
-                        for symptom in st.session_state.detected_symptoms:
+                        # Initialize details for each symptom
+                        extracted_info = analysis.get('extracted_info', {})
+                        for symptom in analysis['symptoms']:
                             st.session_state.symptom_details[symptom] = {
-                                "Duration": st.session_state.extracted_info.get("Duration", ""),
-                                "Severity": st.session_state.extracted_info.get("Severity", ""),
-                                "Frequency": st.session_state.extracted_info.get("Frequency", ""),
-                                "Factors": st.session_state.extracted_info.get("Factors", ""),
+                                "Duration": extracted_info.get("Duration", ""),
+                                "Severity": extracted_info.get("Severity", ""),
+                                "Frequency": extracted_info.get("Frequency", ""),
+                                "Factors": extracted_info.get("Factors", ""),
                                 "Additional Notes": symptoms_desc
                             }
                         
-                        st.success(translate_text("✅ Analysis complete!", curr_lang))
+                        st.success("✅ Analysis complete!")
+                        st.rerun()
+                    else:
+                        st.error(f"Analysis failed: {resp.status_code}")
                         
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown(f"**{translate_text('Symptoms:', curr_lang)}**")
-                            for s in st.session_state.detected_symptoms:
-                                symptom_translated = translate_text(s, curr_lang)
-                                st.write(f"• {symptom_translated}")
-                        with col2:
-                            st.markdown(f"**{translate_text('Extracted:', curr_lang)}**")
-                            for k, v in st.session_state.extracted_info.items():
-                                if v:  # Only show non-empty
-                                    k_translated = translate_text(k, curr_lang)
-                                    st.write(f"• {k_translated}: {v}")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         
-        # ENHANCED: Show editable fields for EACH symptom
-        if st.session_state.detected_symptoms:
-            st.markdown(f"#### {translate_text('Review & Edit Symptom Details', curr_lang)}")
+        # === DISPLAY ANALYSIS RESULTS ===
+        if st.session_state.analysis_result:
+            analysis = st.session_state.analysis_result
             
-            # Create tabs for each symptom
-            if len(st.session_state.detected_symptoms) > 1:
-                symptom_tabs = st.tabs([s.upper() for s in st.session_state.detected_symptoms])
+            st.markdown("---")
+            st.markdown("### 🎯 Analysis Results")
+            
+            # Show detected symptoms
+            st.markdown("#### Detected Symptoms")
+            col1, col2 = st.columns(2)
+            with col1:
+                for sym in analysis['symptoms']:
+                    st.success(f"✅ {sym.title()}")
+            
+            # Show extracted information
+            with col2:
+                if analysis.get('extracted_info'):
+                    st.markdown("**Auto-detected:**")
+                    for key, value in analysis['extracted_info'].items():
+                        if value:
+                            st.caption(f"• {key}: {value}")
+            
+            # === SHOW FOLLOW-UP QUESTIONS ===
+            if analysis.get('questions'):
+                st.markdown("---")
+                st.markdown("### 💬 Follow-up Questions")
+                st.info("Help us understand your condition better:")
                 
-                for idx, symptom in enumerate(st.session_state.detected_symptoms):
+                # Store answers in session state
+                if 'question_answers' not in st.session_state:
+                    st.session_state.question_answers = {}
+                
+                for idx, question in enumerate(analysis['questions'], 1):
+                    answer = st.text_input(
+                        f"**Q{idx}:** {question}",
+                        key=f"qa_{idx}",
+                        value=st.session_state.question_answers.get(f"q{idx}", "")
+                    )
+                    st.session_state.question_answers[f"q{idx}"] = answer
+            
+            # === SYMPTOM DETAILS SECTION ===
+            st.markdown("---")
+            st.markdown("### ✏️ Review & Edit Details")
+            
+            if len(analysis['symptoms']) > 1:
+                symptom_tabs = st.tabs([s.upper() for s in analysis['symptoms']])
+                
+                for idx, symptom in enumerate(analysis['symptoms']):
                     with symptom_tabs[idx]:
-                        st.markdown(f"**Details for: {symptom}**")
+                        current_details = st.session_state.symptom_details[symptom]
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             duration = st.text_input(
-                                f"Duration {idx}",
-                                value=st.session_state.symptom_details[symptom].get("Duration", ""),
-                                key=f"duration_{symptom}"
+                                "Duration",
+                                value=current_details.get("Duration", ""),
+                                key=f"dur_{symptom}"
                             )
                             severity = st.text_input(
-                                f"Severity {idx}",
-                                value=st.session_state.symptom_details[symptom].get("Severity", ""),
-                                key=f"severity_{symptom}"
+                                "Severity (1-10)",
+                                value=current_details.get("Severity", ""),
+                                key=f"sev_{symptom}"
                             )
                         with col2:
                             frequency = st.text_input(
-                                f"Frequency {idx}",
-                                value=st.session_state.symptom_details[symptom].get("Frequency", ""),
-                                key=f"frequency_{symptom}"
+                                "Frequency",
+                                value=current_details.get("Frequency", ""),
+                                key=f"freq_{symptom}"
                             )
                             factors = st.text_input(
-                                f"Factors {idx}",
-                                value=st.session_state.symptom_details[symptom].get("Factors", ""),
-                                key=f"factors_{symptom}"
+                                "Triggers/Factors",
+                                value=current_details.get("Factors", ""),
+                                key=f"fact_{symptom}"
                             )
                         
-                        # Update session state with edited values
-                        st.session_state.symptom_details[symptom] = {
+                        # Update session state
+                        st.session_state.symptom_details[symptom].update({
                             "Duration": duration,
                             "Severity": severity,
                             "Frequency": frequency,
-                            "Factors": factors,
-                            "Additional Notes": symptoms_desc
-                        }
+                            "Factors": factors
+                        })
             else:
-                # Single symptom - simpler UI
-                symptom = st.session_state.detected_symptoms[0]
+                # Single symptom
+                symptom = analysis['symptoms'][0]
+                current_details = st.session_state.symptom_details[symptom]
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    duration = st.text_input(
-                        "Duration",
-                        value=st.session_state.symptom_details[symptom].get("Duration", "")
-                    )
-                    severity = st.text_input(
-                        "Severity",
-                        value=st.session_state.symptom_details[symptom].get("Severity", "")
-                    )
+                    duration = st.text_input("Duration", value=current_details.get("Duration", ""))
+                    severity = st.text_input("Severity (1-10)", value=current_details.get("Severity", ""))
                 with col2:
-                    frequency = st.text_input(
-                        "Frequency",
-                        value=st.session_state.symptom_details[symptom].get("Frequency", "")
-                    )
-                    factors = st.text_input(
-                        "Factors",
-                        value=st.session_state.symptom_details[symptom].get("Factors", "")
-                    )
+                    frequency = st.text_input("Frequency", value=current_details.get("Frequency", ""))
+                    factors = st.text_input("Triggers/Factors", value=current_details.get("Factors", ""))
                 
-                st.session_state.symptom_details[symptom] = {
+                st.session_state.symptom_details[symptom].update({
                     "Duration": duration,
                     "Severity": severity,
                     "Frequency": frequency,
-                    "Factors": factors,
-                    "Additional Notes": symptoms_desc
-                }
+                    "Factors": factors
+                })
         
-        st.markdown(f"#### {translate_text('General Health (Optional)', curr_lang)}")
-        q1 = st.text_input(
-            translate_text("Chronic conditions?", curr_lang),
-            placeholder=translate_text("None", curr_lang),
-            value=st.session_state.reg_form_data['q1']
-        )
-        q2 = st.text_input(
-            translate_text("Current medications?", curr_lang),
-            placeholder=translate_text("None", curr_lang),
-            value=st.session_state.reg_form_data['q2']
-        )
+        # === GENERAL HEALTH SECTION ===
+        st.markdown("---")
+        st.markdown("#### General Health (Optional)")
+        q1 = st.text_input("Chronic conditions?", placeholder="None",
+                         value=st.session_state.reg_form_data['q1'])
+        q2 = st.text_input("Current medications?", placeholder="None",
+                         value=st.session_state.reg_form_data['q2'])
         
-        submit = st.form_submit_button(
-            translate_text("✅ Complete Registration", curr_lang)
-        )
+        # === SUBMIT BUTTON ===
+        submit = st.form_submit_button("✅ Complete Registration")
         
         if submit:
-            st.session_state.reg_form_data.update({
-                'name': name, 'age': age, 'email': email, 'gender': gender,
-                'phone': phone, 'password': password, 'symptoms_desc': symptoms_desc,
-                'q1': q1, 'q2': q2
-            })
-            
+            # Validation
             if not all([name, email, phone, password, symptoms_desc]):
-                st.error(translate_text("❌ Fill required fields", curr_lang))
-                return
-            if not validate_email(email) or not validate_phone(phone):
-                st.error(translate_text("❌ Invalid email/phone", curr_lang))
+                st.error("❌ Fill all required fields")
                 return
             
-            # CRITICAL FIX: Use symptom-specific details, not shared
+            if not validate_email(email):
+                st.error("❌ Invalid email format")
+                return
+            
+            if not validate_phone(phone):
+                st.error("❌ Invalid phone (need 10+ digits)")
+                return
+            
+            if len(password) < 6:
+                st.error("❌ Password must be 6+ characters")
+                return
+            
+            # Build symptom data
             per_symptom = {}
-            if st.session_state.detected_symptoms and st.session_state.symptom_details:
-                # Each symptom gets its own details
-                for symptom in st.session_state.detected_symptoms:
+            if st.session_state.analysis_result and st.session_state.symptom_details:
+                for symptom in st.session_state.analysis_result['symptoms']:
                     per_symptom[symptom] = st.session_state.symptom_details.get(symptom, {
-                        "Duration": "Not specified",
-                        "Severity": "Not specified",
-                        "Frequency": "Not specified",
-                        "Factors": "Not specified",
+                        "Duration": "",
+                        "Severity": "",
+                        "Frequency": "",
+                        "Factors": "",
                         "Additional Notes": symptoms_desc
                     })
             else:
@@ -593,6 +561,7 @@ def show_patient_registration():
                     }
                 }
             
+            # Prepare registration data
             patient_data = {
                 "demographic": {
                     "name": name,
@@ -611,13 +580,15 @@ def show_patient_registration():
                 "password": password
             }
             
+            # Submit registration
             try:
-                with st.spinner(translate_text("Creating account...", curr_lang)):
+                with st.spinner("Creating your account..."):
                     resp = requests.post(
                         f"{API_BASE_URL}/api/auth/patient/register",
                         json=patient_data,
                         timeout=30
                     )
+                    
                     if resp.status_code == 200:
                         data = resp.json()
                         st.session_state.logged_in = True
@@ -630,15 +601,16 @@ def show_patient_registration():
                             'name': '', 'age': 25, 'email': '', 'gender': 'Male',
                             'phone': '', 'password': '', 'symptoms_desc': '', 'q1': '', 'q2': ''
                         }
-                        st.session_state.detected_symptoms = []
-                        st.session_state.extracted_info = {}
                         st.session_state.symptom_details = {}
+                        st.session_state.analysis_result = None
+                        st.session_state.question_answers = {}
                         
-                        st.success(translate_text("✅ Registration complete!", curr_lang))
+                        st.success("✅ Registration complete!")
                         st.balloons()
                         st.rerun()
                     else:
                         st.error(parse_api_error(resp))
+                        
             except Exception as e:
                 st.error(f"Error: {str(e)}")
 
@@ -1123,8 +1095,8 @@ def show_doctor_dashboard():
     # ==================== TAB 2: Patient Details WITH AI INSIGHTS ====================
     with tab2:
         st.subheader("🔍 Search and View Patient Details")
-        
-        # Search section
+
+        # -------------------- Search Section --------------------
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
             search_name = st.text_input("🔍 Search by Name", placeholder="Enter patient name...")
@@ -1133,243 +1105,210 @@ def show_doctor_dashboard():
         with col3:
             st.markdown("<br>", unsafe_allow_html=True)
             search_button = st.button("🔍 Search", use_container_width=True)
-        
-        # Fetch and filter patients
+
         try:
             resp = requests.get(f"{API_BASE_URL}/api/patients/", headers=headers)
             if resp.status_code == 200:
                 all_patients = resp.json()
-                
-                # Apply filters
+
                 filtered_patients = all_patients
                 if search_name:
-                    filtered_patients = [p for p in filtered_patients 
-                                       if search_name.lower() in p.get('name', '').lower()]
+                    filtered_patients = [
+                        p for p in filtered_patients
+                        if search_name.lower() in p.get("name", "").lower()
+                    ]
                 if search_email:
-                    filtered_patients = [p for p in filtered_patients 
-                                       if search_email.lower() in p.get('email', '').lower()]
-                
-                # Display search results
+                    filtered_patients = [
+                        p for p in filtered_patients
+                        if search_email.lower() in p.get("email", "").lower()
+                    ]
+
                 if search_button or search_name or search_email:
                     st.markdown("---")
                     st.markdown(f"### 📋 Search Results ({len(filtered_patients)} found)")
-                    
+
                     if filtered_patients:
                         for p in filtered_patients:
                             with st.container():
-                                col1, col2, col3 = st.columns([3, 2, 1])
-                                
-                                with col1:
+                                c1, c2, c3 = st.columns([3, 2, 1])
+
+                                with c1:
                                     st.markdown(f"**👤 {p['name']}**")
                                     st.caption(f"Age: {p.get('age')} | Gender: {p.get('gender')}")
-                                
-                                with col2:
+
+                                with c2:
                                     st.markdown(f"📧 {p.get('email')}")
                                     st.caption(f"📱 {p.get('phone')}")
-                                
-                                with col3:
-                                    if st.button("👁️ View Details", key=f"view_{p['id']}", use_container_width=True):
-                                        st.session_state.selected_patient_id = p['id']
+
+                                with c3:
+                                    if st.button(
+                                        "👁️ View Details",
+                                        key=f"view_{p['id']}",
+                                        use_container_width=True
+                                    ):
+                                        st.session_state.selected_patient_id = p["id"]
                                         st.rerun()
-                                
-                                st.markdown("---")
+                            st.markdown("---")
                     else:
-                        st.warning("No patients found matching your search criteria")
+                        st.warning("No patients found")
                 else:
-                    st.info("👆 Use the search fields above to find a patient")
-                
-                # ==================== DISPLAY SELECTED PATIENT WITH AI INSIGHTS ====================
-                if st.session_state.selected_patient_id:
+                    st.info("👆 Use search fields above")
+
+                # ==================== PATIENT DETAILS ====================
+                if st.session_state.get("selected_patient_id"):
                     st.markdown("---")
                     st.markdown("## 📄 Patient Details")
-                    
-                    try:
-                        detail_resp = requests.get(
-                            f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}", 
-                            headers=headers
-                        )
-                        
-                        if detail_resp.status_code == 200:
-                            patient_data = detail_resp.json()
-                            demo = patient_data["demographic"]
-                            
-                            # Patient Header with Back Button
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.markdown(f"### 👤 {demo['name']}")
-                                st.caption(f"Patient ID: {st.session_state.selected_patient_id[-8:].upper()}")
-                            with col2:
-                                if st.button("🔙 Back to Search"):
-                                    st.session_state.selected_patient_id = None
-                                    st.rerun()
-                            
-                            st.markdown("---")
-                            
-                            # Demographics Section
-                            with st.expander("👤 **Demographics**", expanded=True):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.info(f"**Name:** {demo['name']}")
-                                    st.info(f"**Age:** {demo['age']} years")
-                                    st.info(f"**Gender:** {demo['gender']}")
-                                with col2:
-                                    st.info(f"**Email:** {demo['email']}")
-                                    st.info(f"**Phone:** {demo['phone']}")
-                            
-                            # Clinical Summary
-                            if patient_data.get("summary"):
-                                with st.expander("📋 **Clinical Summary**", expanded=True):
-                                    st.success(patient_data["summary"])
-                            
-                            # Symptoms Section
-                            with st.expander("🩺 **Reported Symptoms**", expanded=True):
-                                symptoms = patient_data.get("per_symptom", {})
-                                if symptoms:
-                                    for idx, (symptom_name, details) in enumerate(symptoms.items(), 1):
-                                        st.markdown(f"#### {idx}. {symptom_name.upper()}")
-                                        
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            if details.get("Duration"):
-                                                st.write(f"⏱️ **Duration:** {details['Duration']}")
-                                            if details.get("Severity"):
-                                                st.write(f"📊 **Severity:** {details['Severity']}")
-                                        with col2:
-                                            if details.get("Frequency"):
-                                                st.write(f"🔄 **Frequency:** {details['Frequency']}")
-                                            if details.get("Factors"):
-                                                st.write(f"⚡ **Triggers/Factors:** {details['Factors']}")
-                                        
-                                        if details.get("Additional Notes"):
-                                            st.write(f"📝 **Notes:** {details['Additional Notes']}")
-                                        
-                                        st.markdown("---")
-                                else:
-                                    st.warning("No symptoms recorded")
-                            
-                            # General Health Questions
-                            with st.expander("🏥 **General Health Information**"):
-                                gen_questions = patient_data.get("gen_questions", {})
-                                if gen_questions:
-                                    for question, answer in gen_questions.items():
-                                        if answer and answer.lower() != "none":
-                                            st.markdown(f"**Q: {question}**")
-                                            st.write(f"A: {answer}")
-                                            st.markdown("")
-                                else:
-                                    st.info("No general health information available")
-                            
-                            # ==================== AI CLINICAL INSIGHTS SECTION (NEW!) ====================
-                            st.markdown("---")
-                            st.markdown("### 🧠 AI Clinical Insights")
-                            
-                            # Initialize cache key for this patient
-                            cache_key = f'insights_{st.session_state.selected_patient_id}'
-                            
-                            # Button to generate insights
-                            col1, col2, col3 = st.columns([1, 2, 1])
-                            with col2:
-                                if st.button("🤖 Generate AI Clinical Insights", use_container_width=True, type="primary"):
-                                    with st.spinner("🧠 AI analyzing patient data... This may take 10-30 seconds..."):
-                                        try:
-                                            insights_resp = requests.get(
-                                                f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
-                                                headers=headers,
-                                                timeout=60  # Increase timeout for LLM processing
-                                            )
-                                            
-                                            if insights_resp.status_code == 200:
-                                                insights_data = insights_resp.json()
-                                                insights = insights_data["insights"]
-                                                
-                                                # Cache in session state
-                                                st.session_state[cache_key] = {
-                                                    'insights': insights,
-                                                    'generated_at': insights_data.get('generated_at')
-                                                }
-                                                
-                                                st.success("✅ Clinical insights generated successfully!")
-                                                st.rerun()
-                                            else:
-                                                st.error(f"Failed to generate insights: {parse_api_error(insights_resp)}")
-                                        except requests.exceptions.Timeout:
-                                            st.error("⏱️ Request timeout. The AI model might be loading for the first time (this takes 1-2 minutes). Please try again.")
-                                        except Exception as e:
-                                            st.error(f"❌ Error: {str(e)}")
-                            
-                            # Display cached insights if available
-                            if cache_key in st.session_state:
-                                cached_insights = st.session_state[cache_key]
-                                
-                                st.markdown("---")
-                                
-                                # Show when generated
-                                if cached_insights.get('generated_at'):
-                                    try:
-                                        from datetime import datetime
-                                        gen_time = datetime.fromtimestamp(cached_insights['generated_at'])
-                                        st.caption(f"🕐 Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                                    except:
-                                        pass
-                                
-                                # Display insights in a nice container
-                                with st.container():
-                                    st.markdown("""
-                                        <style>
-                                        .insights-box {
-                                            background-color: #f0f8ff;
-                                            border-left: 5px solid #1f77b4;
-                                            padding: 20px;
-                                            border-radius: 5px;
-                                            margin: 10px 0;
-                                        }
-                                        </style>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    st.markdown('<div class="insights-box">', unsafe_allow_html=True)
-                                    st.markdown("#### 🧠 Clinical Analysis")
-                                    st.markdown(cached_insights['insights'])
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                # Option to clear insights
-                                col1, col2, col3 = st.columns([1, 2, 1])
-                                with col2:
-                                    if st.button("🔄 Regenerate Insights", use_container_width=True):
-                                        del st.session_state[cache_key]
-                                        st.rerun()
-                            else:
-                                st.info("💡 Click the button above to generate AI-powered clinical insights including differential diagnoses, recommended investigations, and red flags.")
-                            
-                            # ==================== DOWNLOAD PDF SECTION ====================
-                            st.markdown("---")
-                            st.markdown("### 📥 Download Report")
-                            col1, col2, col3 = st.columns([1, 1, 1])
-                            with col2:
-                                if st.button("📄 Download PDF Report", use_container_width=True):
-                                    with st.spinner("Generating PDF..."):
-                                        pdf_content = download_pdf(st.session_state.selected_patient_id)
-                                        if pdf_content:
-                                            st.download_button(
-                                                label="💾 Save PDF Report",
-                                                data=pdf_content,
-                                                file_name=f"{demo['name'].replace(' ', '_')}_Health_Report.pdf",
-                                                mime="application/pdf",
-                                                use_container_width=True
-                                            )
-                                        else:
-                                            st.error("Failed to generate PDF")
-                        else:
-                            st.error("Failed to load patient details")
-                            st.session_state.selected_patient_id = None
-                    
-                    except Exception as e:
-                        st.error(f"Error loading patient details: {str(e)}")
+
+                    detail_resp = requests.get(
+                        f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}",
+                        headers=headers
+                    )
+
+                    if detail_resp.status_code != 200:
+                        st.error("Failed to load patient details")
                         st.session_state.selected_patient_id = None
+                        st.stop()
+
+                    patient_data = detail_resp.json()
+                    demo = patient_data["demographic"]
+
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"### 👤 {demo['name']}")
+                        st.caption(f"Patient ID: {st.session_state.selected_patient_id[-8:].upper()}")
+                    with col2:
+                        if st.button("🔙 Back to Search"):
+                            st.session_state.selected_patient_id = None
+                            st.rerun()
+
+                    st.markdown("---")
+
+                    with st.expander("👤 Demographics", expanded=True):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.info(f"Name: {demo['name']}")
+                            st.info(f"Age: {demo['age']}")
+                            st.info(f"Gender: {demo['gender']}")
+                        with c2:
+                            st.info(f"Email: {demo['email']}")
+                            st.info(f"Phone: {demo['phone']}")
+
+                    if patient_data.get("summary"):
+                        with st.expander("📋 Clinical Summary", expanded=True):
+                            st.success(patient_data["summary"])
+
+                    with st.expander("🩺 Reported Symptoms", expanded=True):
+                        symptoms = patient_data.get("per_symptom", {})
+                        if symptoms:
+                            for i, (name, d) in enumerate(symptoms.items(), 1):
+                                st.markdown(f"#### {i}. {name.upper()}")
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    if d.get("Duration"):
+                                        st.write(f"⏱️ {d['Duration']}")
+                                    if d.get("Severity"):
+                                        st.write(f"📊 {d['Severity']}")
+                                with c2:
+                                    if d.get("Frequency"):
+                                        st.write(f"🔄 {d['Frequency']}")
+                                    if d.get("Factors"):
+                                        st.write(f"⚡ {d['Factors']}")
+                                if d.get("Additional Notes"):
+                                    st.write(f"📝 {d['Additional Notes']}")
+                                st.markdown("---")
+                        else:
+                            st.warning("No symptoms recorded")
+
+                    # ==================== AI CLINICAL INSIGHTS (FROM ARTIFACT) ====================
+                    st.markdown("---")
+                    st.markdown("### 🧠 AI Clinical Insights")
+                    st.info("💡 Differential diagnoses, investigations & red flags")
+
+                    cache_key = f"insights_{st.session_state.selected_patient_id}"
+
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        if st.button(
+                            "🤖 Generate Clinical Insights",
+                            use_container_width=True,
+                            type="primary",
+                            key="generate_insights_btn"
+                        ):
+                            with st.spinner("🧠 AI analyzing patient data..."):
+                                try:
+                                    r = requests.get(
+                                        f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
+                                        headers=headers,
+                                        timeout=60
+                                    )
+                                    if r.status_code == 200:
+                                        data = r.json()
+                                        st.session_state[cache_key] = {
+                                            "insights": data["insights"],
+                                            "generated_at": data.get("generated_at")
+                                        }
+                                        st.success("Insights generated")
+                                        st.rerun()
+                                    else:
+                                        st.error(parse_api_error(r))
+                                except Exception as e:
+                                    st.error(str(e))
+
+                    if cache_key in st.session_state:
+                        cached = st.session_state[cache_key]
+
+                        st.markdown("""
+                        <style>
+                        .insights-box {
+                            background-color: #f4f8ff;
+                            border-left: 6px solid #4c6ef5;
+                            padding: 20px;
+                            border-radius: 8px;
+                            margin-top: 15px;
+                        }
+                        </style>
+                        """, unsafe_allow_html=True)
+
+                        st.markdown('<div class="insights-box">', unsafe_allow_html=True)
+                        st.markdown("#### 🧠 Clinical Analysis")
+                        st.markdown(cached["insights"])
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            if st.button("🔄 Regenerate"):
+                                del st.session_state[cache_key]
+                                st.rerun()
+                        with c2:
+                            if st.button("📋 View as Text"):
+                                st.code(cached["insights"], language="markdown")
+                        with c3:
+                            st.success("📄 Included in PDF")
+
+                    else:
+                        st.info("Click **Generate Clinical Insights** above")
+
+                    # ==================== PDF DOWNLOAD ====================
+                    st.markdown("---")
+                    if st.button("📄 Download PDF Report", use_container_width=True):
+                        with st.spinner("Generating PDF..."):
+                            pdf = download_pdf(st.session_state.selected_patient_id)
+                            if pdf:
+                                st.download_button(
+                                    "💾 Save PDF",
+                                    pdf,
+                                    file_name=f"{demo['name'].replace(' ', '_')}_Report.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            else:
+                                st.error("PDF generation failed")
+
             else:
                 st.error("Failed to load patients")
-        
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error(str(e))
+
     
     # ==================== TAB 3: Change Password ====================
     with tab3:

@@ -1,7 +1,6 @@
 """
-LLM (Large Language Model) integration module.
-Handles communication with Mistral-7B model for health assessment.
-COMPLETE WORKING VERSION - Properly loads and uses LLM
+LLM Module - COMPLETELY FIXED VERSION
+Fixes symptom extraction, detail mapping, and question generation
 """
 
 import json
@@ -33,35 +32,29 @@ class LLMManager:
             print("   Using fallback knowledge base system")
     
     def _initialize_llm(self):
-        """Initialize the Mistral-7B LLM model - OPTIMIZED VERSION"""
+        """Initialize the Mistral-7B LLM model"""
         try:
             from ctransformers import AutoModelForCausalLM
             
             print("📥 Loading Mistral-7B model...")
-            print("   This will download ~4GB on first run")
-            print("   Model: TheBloke/Mistral-7B-Instruct-v0.2-GGUF")
             
             self.llm = AutoModelForCausalLM.from_pretrained(
                 "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
                 model_file="mistral-7b-instruct-v0.2.Q4_K_M.gguf",
                 model_type="mistral",
                 gpu_layers=0,
-                context_length=1024,     # Balanced
-                max_new_tokens=256,      # Balanced
-                temperature=0.2,         # More focused than 0.3, less rigid than 0.1
+                context_length=1024,
+                max_new_tokens=256,
+                temperature=0.2,
                 top_p=0.9,
                 top_k=40,
                 repetition_penalty=1.15,
-                threads=4                # Use CPU cores
+                threads=4
             )
             
             self.use_llm = True
             print("✅ Mistral-7B loaded successfully!")
             
-        except ImportError:
-            print("❌ ctransformers not installed")
-            print("   Run: pip install ctransformers")
-            raise
         except Exception as e:
             print(f"❌ Model loading error: {e}")
             raise
@@ -71,7 +64,7 @@ class LLMManager:
         return self.use_llm
     
     def _load_symptoms_from_knowledge_base(self):
-        """Load the comprehensive symptoms list from knowledge_base.json."""
+        """Load symptoms list from knowledge_base.json"""
         try:
             possible_paths = [
                 "shared/knowledge_base.json",
@@ -81,143 +74,138 @@ class LLMManager:
                 "./shared/knowledge_base.json"
             ]
             
-            kb_data = None
-            loaded_path = None
-            
             for path in possible_paths:
                 if os.path.exists(path):
                     with open(path, 'r', encoding='utf-8') as f:
                         kb_data = json.load(f)
-                        loaded_path = path
-                        break
-            
-            if kb_data and 'symptoms' in kb_data:
-                symptoms = kb_data.get("symptoms", [])
-                print(f"✅ Loaded {len(symptoms)} symptoms from: {loaded_path}")
-                return symptoms
-            else:
-                print(f"⚠️  Knowledge base found but no 'symptoms' key")
+                        symptoms = kb_data.get("symptoms", [])
+                        print(f"✅ Loaded {len(symptoms)} symptoms from: {path}")
+                        return symptoms
         except Exception as e:
             print(f"⚠️  Error loading knowledge base: {e}")
         
-        # Fallback
         print("⚠️  Using fallback symptom list")
         return ["headache", "fever", "cough", "pain", "nausea", "vomiting", "dizziness"]
     
-    def get_response(self, prompt, max_tokens=256):
-        """
-        Get a response from LLM or fallback.
-        
-        Args:
-            prompt: User's message
-            max_tokens: Maximum response length
-        
-        Returns:
-            Generated response text
-        """
-        if self.use_llm and self.llm:
-            try:
-                # Format prompt for Mistral Instruct
-                formatted_prompt = f"""<s>[INST] You are a helpful medical assistant. Answer the following question briefly and accurately.
-
-Question: {prompt}
-
-Answer: [/INST]"""
-                
-                response = self.llm(formatted_prompt, max_new_tokens=max_tokens)
-                return response.strip()
-            
-            except Exception as e:
-                print(f"LLM generation error: {e}")
-                return self._get_fallback_response(prompt)
-        else:
-            return self._get_fallback_response(prompt)
-    
-    def _get_fallback_response(self, prompt):
-        """Fallback response when LLM unavailable."""
-        return "I'm here to help with your health assessment. Please describe your symptoms in detail."
-    
     def identify_symptoms(self, text):
         """
-        INTELLIGENT symptom identification with context understanding
+        FIXED: Properly identify medical symptoms (not attributes)
         """
         text_lower = text.lower()
         
-        # Try LLM with medical context
+        # Try LLM with BETTER prompt
         if self.use_llm and self.llm:
             try:
-                prompt = f"""<s>[INST] You are a medical AI. Extract ONLY the main symptoms from this patient description. List them separated by commas, nothing else.
+                # CRITICAL FIX: More explicit prompt
+                prompt = f"""<s>[INST] You are a medical AI assistant. Extract ONLY the medical symptoms/conditions from this patient's description. 
 
-    Patient says: "{text}"
+DO NOT include:
+- Severity descriptors (mild, severe, intense)
+- Time periods (daily, weekly, 3 days)
+- Intensity ratings (8/10, high, low)
+- Frequencies (every morning, constant)
 
-    Symptoms: [/INST]"""
+ONLY include actual medical symptoms like:
+- headache
+- nausea
+- fever
+- vomiting
+- dizziness
+- chest pain
+etc.
+
+Patient says: "{text}"
+
+List ONLY medical symptoms, comma-separated, no other words:
+[/INST]"""
                 
                 response = self.llm(prompt, max_new_tokens=60)
                 
-                # Clean up response
-                response = response.strip()
-                # Remove common LLM artifacts
-                response = response.replace("Symptoms:", "").replace("symptoms:", "")
-                response = response.replace("The symptoms are:", "")
-                response = response.strip()
+                # Clean response aggressively
+                response = response.strip().lower()
+                response = response.replace("symptoms:", "").replace("the symptoms are:", "")
+                response = response.replace("medical symptoms:", "").strip()
                 
-                symptoms = [s.strip().lower() for s in response.split(',')]
-                symptoms = [s for s in symptoms if s and 3 <= len(s) <= 40 and not s.startswith("the patient")]
+                # Split and filter
+                symptoms = [s.strip() for s in response.split(',')]
                 
-                if symptoms:
-                    print(f"✅ LLM identified symptoms: {symptoms}")
-                    return symptoms[:5]
+                # CRITICAL FILTER: Remove non-symptoms
+                filtered = []
+                invalid_words = [
+                    'severe', 'mild', 'daily', 'weekly', 'every', 'morning', 'evening',
+                    'day', 'days', 'week', 'weeks', 'month', 'constant', 'frequent',
+                    'out of', '/10', 'intensity', 'pain level', 'worsening', 'improving',
+                    'the patient', 'patient has', 'experiencing'
+                ]
+                
+                for symptom in symptoms:
+                    symptom = symptom.strip()
+                    
+                    # Skip if contains invalid words
+                    if any(inv in symptom for inv in invalid_words):
+                        continue
+                    
+                    # Skip if too short or too long
+                    if len(symptom) < 3 or len(symptom) > 40:
+                        continue
+                    
+                    # Skip if all numbers or punctuation
+                    if not any(c.isalpha() for c in symptom):
+                        continue
+                    
+                    filtered.append(symptom)
+                
+                if filtered:
+                    print(f"✅ LLM identified symptoms: {filtered}")
+                    return filtered[:5]  # Max 5 symptoms
                 
             except Exception as e:
                 print(f"⚠️ LLM symptom extraction error: {e}")
         
-        # Enhanced keyword matching fallback
-        print(f"🔍 Using keyword matching")
+        # Fallback: Enhanced keyword matching
+        print(f"🔍 Using keyword matching fallback")
         matched_symptoms = []
         
-        # Multi-word symptoms first (e.g., "morning headache")
+        # Match against knowledge base
         for symptom in self.symptoms_list:
             symptom_lower = symptom.lower().strip()
-            if len(symptom.split()) > 1:  # Multi-word
-                if symptom_lower in text_lower:
+            
+            # Use word boundaries for better matching
+            if re.search(r'\b' + re.escape(symptom_lower) + r'\b', text_lower):
+                # Additional validation: is this actually a symptom?
+                if symptom_lower not in matched_symptoms:
                     matched_symptoms.append(symptom_lower)
         
-        # Then single-word symptoms
-        for symptom in self.symptoms_list:
-            symptom_lower = symptom.lower().strip()
-            if len(symptom.split()) == 1:  # Single word
-                # Use word boundaries to avoid false matches
-                import re
-                if re.search(r'\b' + re.escape(symptom_lower) + r'\b', text_lower):
-                    if symptom_lower not in [s.split()[0] for s in matched_symptoms]:
-                        matched_symptoms.append(symptom_lower)
-        
         if matched_symptoms:
-            print(f"✅ Keyword matching found: {matched_symptoms}")
+            print(f"✅ Keyword matching found: {matched_symptoms[:5]}")
             return matched_symptoms[:5]
         
+        # Ultimate fallback
+        print("⚠️ No specific symptoms detected")
         return ["general health concern"]
     
     def extract_symptom_details(self, text):
         """
-        INTELLIGENT detail extraction with medical understanding
+        FIXED: Extract temporal/severity details (not symptoms themselves)
         """
         details = {}
         text_lower = text.lower()
         
         if self.use_llm and self.llm:
             try:
-                prompt = f"""<s>[INST] Extract medical information from this patient statement. Format exactly as shown:
+                # BETTER prompt with clear format
+                prompt = f"""<s>[INST] Extract ONLY temporal and severity information from this text.
 
-    Duration: [how long symptom exists, or "Not mentioned"]
-    Severity: [pain scale or descriptor, or "Not mentioned"]
-    Frequency: [how often it occurs, or "Not mentioned"]
-    Factors: [triggers or what makes it worse, or "Not mentioned"]
+Format EXACTLY as shown:
+Duration: [how long, e.g., "3 days", "2 weeks", or "Not mentioned"]
+Severity: [pain scale or description, e.g., "8/10", "severe", or "Not mentioned"]
+Frequency: [how often, e.g., "daily", "3 times per day", or "Not mentioned"]
+Factors: [triggers/worsening factors, or "Not mentioned"]
 
-    Patient statement: "{text}"
+Text: "{text}"
 
-    Extracted information:
-    [/INST]"""
+Extracted information:
+[/INST]"""
                 
                 response = self.llm(prompt, max_new_tokens=120)
                 
@@ -230,28 +218,28 @@ Answer: [/INST]"""
                             key = parts[0].strip()
                             value = parts[1].strip()
                             
-                            # Clean up value
-                            value = value.replace('[', '').replace(']', '')
+                            # Clean value
+                            value = value.replace('[', '').replace(']', '').strip()
                             
                             # Only keep if meaningful
-                            if value and value.lower() not in ['not mentioned', 'not specified', 'n/a', 'none', '']:
+                            if value and value.lower() not in ['not mentioned', 'not specified', 'n/a', 'none']:
                                 details[key] = value
                 
                 if details:
-                    print(f"✅ LLM extracted: {details}")
+                    print(f"✅ LLM extracted details: {details}")
                     return details
                 
             except Exception as e:
                 print(f"⚠️ LLM extraction error: {e}")
         
-        # Regex fallback (your existing code is fine, keep it)
+        # Regex fallback
         print(f"🔍 Using regex extraction")
         
-        # Duration
+        # Duration patterns
         duration_patterns = [
-            r'(\d+\s*(?:day|days|week|weeks|month|months|year|years))',
-            r'(since\s+(?:yesterday|last\s+\w+))',
-            r'(for\s+(?:the\s+)?(?:past\s+)?(?:last\s+)?\d+\s+\w+)',
+            r'for\s+(?:the\s+)?(?:past\s+)?(?:last\s+)?(\d+\s+(?:day|days|week|weeks|month|months|year|years))',
+            r'(\d+\s+(?:day|days|week|weeks|month|months))\s+(?:now|ago)',
+            r'since\s+(yesterday|last\s+\w+)',
         ]
         for pattern in duration_patterns:
             match = re.search(pattern, text_lower)
@@ -259,11 +247,10 @@ Answer: [/INST]"""
                 details["Duration"] = match.group(1).strip()
                 break
         
-        # Severity
+        # Severity patterns
         severity_patterns = [
             r'(\d+(?:\.\d+)?)\s*(?:out\s+of|/)\s*10',
-            r'severity\s*:?\s*(\d+)',
-            r'(severe|mild|moderate|extreme|intense|terrible|unbearable)',
+            r'\b(severe|mild|moderate|extreme|intense|terrible|unbearable|bad)\b',
         ]
         for pattern in severity_patterns:
             match = re.search(pattern, text_lower)
@@ -271,7 +258,7 @@ Answer: [/INST]"""
                 details["Severity"] = match.group(1).strip()
                 break
         
-        # Frequency
+        # Frequency patterns
         frequency_patterns = [
             r'(every\s+(?:day|morning|evening|night|hour))',
             r'(daily|hourly|constantly|frequently)',
@@ -280,13 +267,13 @@ Answer: [/INST]"""
         for pattern in frequency_patterns:
             match = re.search(pattern, text_lower)
             if match:
-                details["Frequency"] = match.group(0).strip()
+                details["Frequency"] = match.group(1).strip()
                 break
         
         # Factors/Triggers
         factor_patterns = [
             r'(?:worse|triggered|worsens?|aggravated)\s+(?:by|when|with|after)\s+([^.,!?]+)',
-            r'(?:better|improves?|relieved)\s+(?:by|when|with)\s+([^.,!?]+)',
+            r'(?:especially|particularly)\s+(?:in|during|when)\s+([^.,!?]+)',
         ]
         for pattern in factor_patterns:
             match = re.search(pattern, text_lower)
@@ -294,33 +281,44 @@ Answer: [/INST]"""
                 details["Factors"] = match.group(1).strip()
                 break
         
+        if details:
+            print(f"✅ Regex extracted: {details}")
+        else:
+            print("⚠️ No details extracted")
+        
         return details
     
     def generate_questions(self, symptom, existing_details=None):
         """
-        INTELLIGENT context-aware question generation
+        FIXED: Generate relevant follow-up questions
         """
         if existing_details is None:
             existing_details = {}
         
-        # Build context about what we know
+        # Build context
         known_info = []
         for key, value in existing_details.items():
             if value and value != "Not specified":
                 known_info.append(f"{key}: {value}")
         
-        known_context = ", ".join(known_info) if known_info else "nothing yet"
+        known_context = ", ".join(known_info) if known_info else "nothing"
         
         if self.use_llm and self.llm:
             try:
-                prompt = f"""<s>[INST] You are a medical assistant. Generate 2-3 brief, specific follow-up questions for a patient with {symptom}.
+                prompt = f"""<s>[INST] You are a medical assistant. A patient has reported: {symptom}
 
-    Already known: {known_context}
+We already know: {known_context}
 
-    Ask about what's missing (duration, severity, frequency, triggers). Keep questions under 15 words each.
+Generate 2-3 brief follow-up questions to gather missing information. Focus on:
+- Duration (if unknown)
+- Severity/intensity (if unknown)
+- Frequency (if unknown)
+- Triggers or worsening factors (if unknown)
 
-    Questions (one per line):
-    [/INST]"""
+Format: One question per line, each under 15 words. No numbering or prefixes.
+
+Questions:
+[/INST]"""
                 
                 response = self.llm(prompt, max_new_tokens=120)
                 
@@ -329,8 +327,7 @@ Answer: [/INST]"""
                     line = line.strip()
                     # Remove numbering
                     line = re.sub(r'^\d+[\.)]\s*', '', line)
-                    # Remove "Question:" prefix
-                    line = re.sub(r'^Question:\s*', '', line, flags=re.IGNORECASE)
+                    line = re.sub(r'^[-•]\s*', '', line)
                     
                     if line and '?' in line and 10 < len(line) < 100:
                         questions.append(line)
@@ -357,11 +354,12 @@ Answer: [/INST]"""
         if not existing_details.get("Factors"):
             questions.append(f"Does anything trigger or worsen your {symptom}?")
         
+        print(f"✅ Template generated {len(questions[:3])} questions")
         return questions[:3]
     
     def summarize_patient_condition(self, patient_data):
         """
-        INTELLIGENT clinical summary generation
+        FIXED: Generate comprehensive clinical summary
         """
         symptoms = list(patient_data.get("per_symptom", {}).keys())
         demographic = patient_data.get("demographic", {})
@@ -373,32 +371,51 @@ Answer: [/INST]"""
         
         if self.use_llm and self.llm:
             try:
-                # Build detailed symptom context
-                symptom_text = ""
-                for sym, details in patient_data.get("per_symptom", {}).items():
-                    symptom_text += f"\n- {sym.title()}"
-                    if details.get('Duration'):
-                        symptom_text += f" (Duration: {details['Duration']}"
-                    if details.get('Severity'):
-                        symptom_text += f", Severity: {details['Severity']}"
-                    if details.get('Frequency'):
-                        symptom_text += f", Frequency: {details['Frequency']}"
-                    symptom_text += ")"
+                # Build comprehensive context
+                age = demographic.get('age', 'Adult')
+                gender = demographic.get('gender', 'patient')
                 
-                prompt = f"""<s>[INST] Write a professional 2-3 sentence clinical summary for a medical record.
+                # Format symptoms with details
+                symptom_descriptions = []
+                for sym, details in patient_data.get("per_symptom", {}).items():
+                    desc = f"- {sym.title()}"
+                    detail_parts = []
+                    
+                    if details.get('Duration'):
+                        detail_parts.append(f"duration: {details['Duration']}")
+                    if details.get('Severity'):
+                        detail_parts.append(f"severity: {details['Severity']}")
+                    if details.get('Frequency'):
+                        detail_parts.append(f"frequency: {details['Frequency']}")
+                    if details.get('Factors'):
+                        detail_parts.append(f"triggers: {details['Factors']}")
+                    
+                    if detail_parts:
+                        desc += f" ({', '.join(detail_parts)})"
+                    
+                    symptom_descriptions.append(desc)
+                
+                symptom_text = "\n".join(symptom_descriptions)
+                
+                prompt = f"""<s>[INST] Write a professional clinical summary for a medical record.
 
-    Patient: {demographic.get('age', 'Adult')} year old {demographic.get('gender', 'patient')}
+Patient: {age}-year-old {gender}
 
-    Presenting symptoms:{symptom_text}
+Symptoms:
+{symptom_text}
 
-    Write a concise clinical summary suitable for a doctor's review:
-    [/INST]"""
+Write a 2-3 sentence clinical summary suitable for a doctor's review. Include:
+1. Patient demographics
+2. Main presenting symptoms with key characteristics
+3. Clinical significance or concerns
+
+Clinical summary:
+[/INST]"""
                 
                 summary = self.llm(prompt, max_new_tokens=200)
                 
-                # Clean up
+                # Clean response
                 summary = summary.strip()
-                # Remove common artifacts
                 summary = re.sub(r'^(Summary:|Clinical Summary:)\s*', '', summary, flags=re.IGNORECASE)
                 
                 if len(summary) > 30:
@@ -417,9 +434,9 @@ Answer: [/INST]"""
         summary = f"{age}-year-old {gender} presents with {len(symptoms)} reported symptom(s): {symptom_list}. "
         
         # Add duration if available
-        first_symptom = list(patient_data.get("per_symptom", {}).values())[0]
-        if first_symptom.get('Duration'):
-            summary += f"Symptoms present for {first_symptom['Duration']}. "
+        first_symptom_details = list(patient_data.get("per_symptom", {}).values())[0]
+        if first_symptom_details.get('Duration'):
+            summary += f"Symptoms present for {first_symptom_details['Duration']}. "
         
         summary += "Detailed symptom analysis and general health information recorded for clinical review."
         
@@ -427,7 +444,7 @@ Answer: [/INST]"""
     
     def get_clinical_insights(self, patient_data):
         """
-        INTELLIGENT clinical insights for doctors
+        FIXED: Generate comprehensive clinical insights for doctors
         """
         print(f"🧠 Generating clinical insights...")
         
@@ -436,31 +453,35 @@ Answer: [/INST]"""
         
         if self.use_llm and self.llm:
             try:
-                # Build comprehensive context
                 age = demographic.get('age', 'unknown')
                 gender = demographic.get('gender', 'unknown')
                 
-                symptom_details = ""
+                # Build symptom context
+                symptom_details = []
                 for sym, details in patient_data.get("per_symptom", {}).items():
-                    symptom_details += f"\n{sym.title()}:"
+                    detail_str = f"{sym.title()}:"
                     for key, value in details.items():
                         if value and value != "Not specified":
-                            symptom_details += f" {key}={value},"
+                            detail_str += f" {key}={value},"
+                    symptom_details.append(detail_str)
                 
-                prompt = f"""<s>[INST] Provide brief clinical insights for this patient case:
-
-    Age: {age}, Gender: {gender}
-    Symptoms:{symptom_details}
-
-    Provide:
-    1. Most likely diagnosis (1-2 conditions)
-    2. Key investigations (2-3 tests)
-    3. Red flags (1-2 warning signs)
-
-    Keep it under 150 words total.
-    [/INST]"""
+                symptom_text = "\n".join(symptom_details)
                 
-                insights = self.llm(prompt, max_new_tokens=250)
+                prompt = f"""<s>[INST] Provide brief clinical insights for this case:
+
+Patient: {age} years old, {gender}
+Symptoms:
+{symptom_text}
+
+Provide (keep under 200 words total):
+1. Differential Diagnoses (top 2-3 possibilities)
+2. Recommended Investigations (2-3 key tests)
+3. Red Flags (1-2 warning signs to watch for)
+
+Clinical Insights:
+[/INST]"""
+                
+                insights = self.llm(prompt, max_new_tokens=300)
                 
                 if insights and len(insights) > 50:
                     print(f"✅ Clinical insights generated ({len(insights)} chars)")
@@ -473,17 +494,17 @@ Answer: [/INST]"""
         print(f"📝 Using template insights")
         return f"""Clinical Review Notes:
 
-    Patient: {demographic.get('age', 'N/A')} year old {demographic.get('gender', 'N/A')}
-    Presenting symptoms: {', '.join(symptoms)}
+Patient: {demographic.get('age', 'N/A')} year old {demographic.get('gender', 'N/A')}
+Presenting symptoms: {', '.join(symptoms)}
 
-    Recommended Actions:
-    - Complete physical examination
-    - Review symptom timeline and progression
-    - Assess patient's medical history
-    - Consider relevant diagnostic tests
-    - Monitor for any red flag symptoms
+Recommended Actions:
+- Complete physical examination
+- Review symptom timeline and progression
+- Assess patient's medical history
+- Consider relevant diagnostic tests based on symptoms
+- Monitor for any red flag symptoms
 
-    This case requires thorough evaluation by a qualified healthcare provider."""
+This case requires thorough evaluation by a qualified healthcare provider."""
 
 
 # Global LLM manager instance
