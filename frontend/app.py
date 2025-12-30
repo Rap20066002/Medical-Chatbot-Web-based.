@@ -586,7 +586,7 @@ def show_patient_registration():
                     resp = requests.post(
                         f"{API_BASE_URL}/api/auth/patient/register",
                         json=patient_data,
-                        timeout=30
+                        timeout=10
                     )
                     
                     if resp.status_code == 200:
@@ -605,12 +605,18 @@ def show_patient_registration():
                         st.session_state.analysis_result = None
                         st.session_state.question_answers = {}
                         
-                        st.success("✅ Registration complete!")
+                        st.success("✅ Registration complete! You're now logged in.")
+                        st.info("🤖 AI clinical summary is being generated in the background (takes 5-7 minutes). You can view your profile now, and the summary will appear automatically when ready.")
                         st.balloons()
+
+                        import time
+                        time.sleep(2)
+
                         st.rerun()
                     else:
                         st.error(parse_api_error(resp))
-                        
+            except requests.exceptions.Timeout:
+                st.error("⏱️ Request timeout - but this shouldn't happen now!")           
             except Exception as e:
                 st.error(f"Error: {str(e)}")
 
@@ -719,15 +725,79 @@ def show_patient_dashboard():
         
         # === TAB 2: Records (unchanged) ===
         with tab2:
-            st.subheader("Health Records")
-            if patient_data.get("summary"):
-                st.success(patient_data["summary"])
-            st.markdown("#### Symptoms")
+            st.subheader("🩺 Health Records")
+            
+            # Check summary status
+            summary_status = patient_data.get("summary_status", "unknown")
+            
+            if summary_status == "generating":
+                # Summary still being generated
+                st.info("🤖 AI Clinical Summary is being generated... (takes 5-7 minutes)")
+                
+                # Show loading animation
+                with st.spinner("Analyzing your health data with AI..."):
+                    st.write("This includes:")
+                    st.write("• Differential diagnoses")
+                    st.write("• Clinical insights")
+                    st.write("• Professional medical summary")
+                
+                # Auto-refresh button
+                if st.button("🔄 Check if Summary is Ready", use_container_width=True):
+                    st.rerun()
+                
+                # Auto-refresh every 30 seconds
+                st.markdown("*Page will auto-refresh in 30 seconds...*")
+                import time
+                time.sleep(30)
+                st.rerun()
+                
+            elif summary_status == "completed":
+                # Summary ready!
+                if patient_data.get("summary"):
+                    st.success("✅ AI Clinical Summary (Ready)")
+                    with st.expander("📋 View Clinical Summary", expanded=True):
+                        st.markdown(patient_data["summary"])
+                        
+                        # Show when it was generated
+                        if patient_data.get("summary_generated_at"):
+                            from datetime import datetime
+                            gen_time = datetime.fromtimestamp(patient_data["summary_generated_at"])
+                            st.caption(f"Generated: {gen_time.strftime('%Y-%m-%d %H:%M')}")
+            
+            elif summary_status == "failed":
+                st.warning("⚠️ AI summary generation failed. Your data is safe, but automated analysis is unavailable.")
+            
+            else:
+                # Old patient without status field
+                if patient_data.get("summary"):
+                    st.success(patient_data["summary"])
+            
+            # Show symptoms (always visible)
+            st.markdown("---")
+            st.markdown("#### Reported Symptoms")
             for sym, det in patient_data["per_symptom"].items():
-                with st.expander(f"📌 {sym}"):
-                    for k, v in det.items():
-                        if v and v != "Not specified":
-                            st.write(f"**{k}:** {v}")
+                with st.expander(f"📌 {sym.upper()}", expanded=False):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if det.get("Duration"):
+                            st.write(f"**Duration:** {det['Duration']}")
+                        if det.get("Severity"):
+                            st.write(f"**Severity:** {det['Severity']}")
+                    with col2:
+                        if det.get("Frequency"):
+                            st.write(f"**Frequency:** {det['Frequency']}")
+                        if det.get("Factors"):
+                            st.write(f"**Factors:** {det['Factors']}")
+                    if det.get("Additional Notes"):
+                        st.write(f"**Notes:** {det['Additional Notes']}")
+            
+            # General health questions
+            st.markdown("---")
+            st.markdown("#### General Health Information")
+            for question, answer in patient_data.get("gen_questions", {}).items():
+                if answer and answer != "None":
+                    st.write(f"**{question}**")
+                    st.write(f"↳ {answer}")
         
         # === TAB 3: ENHANCED UPDATE SECTION ===
         with tab3:

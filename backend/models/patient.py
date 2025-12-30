@@ -69,6 +69,8 @@ class PatientResponse(BaseModel):
     per_symptom: Dict[str, SymptomDetail]
     gen_questions: Dict[str, str]
     summary: Optional[str] = None
+    summary_status: Optional[str] = None
+    summary_generated_at: Optional[float] = None
     created_at: Optional[float] = None
 
 # ENHANCED PatientUpdate - Supports flexible symptom format

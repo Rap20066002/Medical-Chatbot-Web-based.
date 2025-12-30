@@ -21,7 +21,10 @@ router = APIRouter()
 
 @router.post("/patient/register", response_model=Token)
 async def register_patient(patient_data: PatientCreate):
-    """Register a new patient - FIXED WITH AUTO SUMMARY"""
+    """
+    FIXED: Register patient immediately, generate summary in background
+    No timeout issues!
+    """
     try:
         print(f"📝 Registration attempt for: {patient_data.demographic.email}")
         
@@ -54,38 +57,23 @@ async def register_patient(patient_data: PatientCreate):
         
         print("✅ Symptom data converted")
         
-        # CRITICAL FIX: Generate summary BEFORE encrypting
-        patient_dict_for_summary = {
-            "demographic": patient_data.demographic.dict(),
-            "per_symptom": per_symptom_dict,
-            "Gen_questions": patient_data.gen_questions
-        }
-        
-        print("🤖 Generating clinical summary...")
-        summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
-        print(f"✅ Summary generated: {summary[:100]}..." if summary else "⚠️ No summary generated")
-        
-        # Encrypt patient data
+        # ⚡ CRITICAL: Save patient IMMEDIATELY without summary
         encrypted_data = {
             "demographic": db_manager.encrypt_dict(patient_data.demographic.dict()),
             "per_symptom": db_manager.encrypt_dict(per_symptom_dict),
             "Gen_questions": db_manager.encrypt_dict(patient_data.gen_questions),
             "password": hashed_password,
-            "created_at": __import__('time').time()
+            "created_at": __import__('time').time(),
+            "summary_status": "generating"  # Track summary status
         }
         
         print("✅ Data encrypted")
         
-        # Add summary if generated
-        if summary:
-            encrypted_data["summary"] = db_manager.encrypt_data(summary)
-            print("✅ Summary encrypted and added")
-        
-        # Save to database
+        # Save to database FIRST (fast operation)
         result = db_manager.patients.insert_one(encrypted_data)
         print(f"✅ Patient saved with ID: {result.inserted_id}")
         
-        # Create access token
+        # Create access token immediately
         access_token = create_access_token(
             data={
                 "sub": patient_data.demographic.email,
@@ -94,8 +82,58 @@ async def register_patient(patient_data: PatientCreate):
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         
-        print("✅ Token created")
+        print("✅ Token created - User can login now!")
         
+        # 🚀 Generate summary in BACKGROUND thread (non-blocking)
+        import threading
+        
+        def generate_summary_background():
+            """Background thread to generate summary"""
+            try:
+                print(f"🤖 [BACKGROUND] Starting summary generation for {result.inserted_id}")
+                
+                patient_dict_for_summary = {
+                    "demographic": patient_data.demographic.dict(),
+                    "per_symptom": per_symptom_dict,
+                    "Gen_questions": patient_data.gen_questions
+                }
+                
+                # This takes 5-7 minutes, but user is already logged in!
+                summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
+                
+                if summary:
+                    # Update patient with summary when ready
+                    db_manager.patients.update_one(
+                        {"_id": result.inserted_id},
+                        {
+                            "$set": {
+                                "summary": db_manager.encrypt_data(summary),
+                                "summary_status": "completed",
+                                "summary_generated_at": __import__('time').time()
+                            }
+                        }
+                    )
+                    print(f"✅ [BACKGROUND] Summary completed for {result.inserted_id}")
+                else:
+                    db_manager.patients.update_one(
+                        {"_id": result.inserted_id},
+                        {"$set": {"summary_status": "failed"}}
+                    )
+                    print(f"⚠️ [BACKGROUND] Summary generation failed for {result.inserted_id}")
+                    
+            except Exception as e:
+                print(f"❌ [BACKGROUND] Error generating summary: {str(e)}")
+                db_manager.patients.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"summary_status": "failed"}}
+                )
+        
+        # Start background thread (daemon=True means it won't block shutdown)
+        summary_thread = threading.Thread(target=generate_summary_background, daemon=True)
+        summary_thread.start()
+        print("✅ Summary generation started in background thread")
+        
+        # Return immediately - user gets logged in!
         return Token(
             access_token=access_token,
             user_type="patient",
