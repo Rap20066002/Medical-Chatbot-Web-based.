@@ -15,6 +15,7 @@ from api.middleware.auth import (
 )
 from core.database import db_manager
 from core.config import settings
+from core.llm import llm_manager
 
 router = APIRouter()
 
