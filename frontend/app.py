@@ -329,41 +329,28 @@ def show_staff_login():
                 st.error(f"❌ Error: {str(e)}")
 
 def show_patient_registration():
-    """FREE-FORM REGISTRATION WITH MULTILINGUAL SUPPORT - FIXED VERSION"""
+    """
+    FIXED REGISTRATION WITH PROPER DETAIL MAPPING
+    Each symptom gets its own details, not shared
+    """
     st.subheader("📝 Register as Patient")
     
-    # Show language selector in sidebar
     render_language_selector()
-    
-    # Show language confirmation if pending
     render_language_confirmation()
     
-    # Get current language for translations
     curr_lang = st.session_state.current_language
     
-    # Initialize session state for form data persistence
     if 'reg_form_data' not in st.session_state:
         st.session_state.reg_form_data = {
-            'name': '',
-            'age': 25,
-            'email': '',
-            'gender': 'Male',
-            'phone': '',
-            'password': '',
-            'symptoms_desc': '',
-            'q1': '',
-            'q2': ''
+            'name': '', 'age': 25, 'email': '', 'gender': 'Male',
+            'phone': '', 'password': '', 'symptoms_desc': '', 'q1': '', 'q2': ''
         }
     
-    st.info(translate_text("📋 Describe your condition - AI will understand!", curr_lang))
+    # NEW: Store details per symptom
+    if 'symptom_details' not in st.session_state:
+        st.session_state.symptom_details = {}
     
-    with st.expander(translate_text("💡 How it works", curr_lang)):
-        st.markdown(translate_text("""
-        **Just describe your symptoms naturally:**
-        - "I have severe headache for 3 days, 8/10 pain, daily in morning"
-        - AI extracts: symptom, duration, severity, frequency
-        - You only answer missing information
-        """, curr_lang))
+    st.info(translate_text("📋 Describe your condition - AI will understand!", curr_lang))
     
     with st.form("patient_reg"):
         st.markdown(f"#### {translate_text('Personal Info', curr_lang)}")
@@ -421,40 +408,26 @@ def show_patient_registration():
         )
         
         if analyze and symptoms_desc:
-            # Save form data to session state BEFORE language detection
             st.session_state.reg_form_data.update({
-                'name': name,
-                'age': age,
-                'email': email,
-                'gender': gender,
-                'phone': phone,
-                'password': password,
-                'symptoms_desc': symptoms_desc
+                'name': name, 'age': age, 'email': email, 'gender': gender,
+                'phone': phone, 'password': password, 'symptoms_desc': symptoms_desc
             })
             
-            # LANGUAGE DETECTION: Check if user typed in non-English
             if detect_language_and_confirm(symptoms_desc):
-                st.rerun()  # Show language confirmation dialog - data is preserved
+                st.rerun()
                 return
             
-            # If language already confirmed or is English, proceed with analysis
             with st.spinner(translate_text("🤖 Analyzing...", curr_lang)):
                 try:
-                    # Translate symptom description to English for backend processing
                     symptoms_desc_en = symptoms_desc
                     if curr_lang != 'en':
                         translate_resp = requests.post(
                             f"{API_BASE_URL}/api/language/translate",
-                            json={
-                                "text": symptoms_desc,
-                                "source": curr_lang,
-                                "target": "en"
-                            }
+                            json={"text": symptoms_desc, "source": curr_lang, "target": "en"}
                         )
                         if translate_resp.status_code == 200:
                             symptoms_desc_en = translate_resp.json()["translated"]
                     
-                    # Analyze symptoms in English
                     resp = requests.post(
                         f"{API_BASE_URL}/api/patients/analyze-symptoms",
                         json={"description": symptoms_desc_en}
@@ -465,49 +438,107 @@ def show_patient_registration():
                         st.session_state.detected_symptoms = analysis['symptoms']
                         st.session_state.extracted_info = analysis.get('extracted_info', {})
                         
+                        # CRITICAL FIX: Initialize details for EACH symptom separately
+                        for symptom in st.session_state.detected_symptoms:
+                            st.session_state.symptom_details[symptom] = {
+                                "Duration": st.session_state.extracted_info.get("Duration", ""),
+                                "Severity": st.session_state.extracted_info.get("Severity", ""),
+                                "Frequency": st.session_state.extracted_info.get("Frequency", ""),
+                                "Factors": st.session_state.extracted_info.get("Factors", ""),
+                                "Additional Notes": symptoms_desc
+                            }
+                        
                         st.success(translate_text("✅ Analysis complete!", curr_lang))
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             st.markdown(f"**{translate_text('Symptoms:', curr_lang)}**")
                             for s in st.session_state.detected_symptoms:
-                                # Translate symptoms back to user's language
                                 symptom_translated = translate_text(s, curr_lang)
                                 st.write(f"• {symptom_translated}")
                         with col2:
                             st.markdown(f"**{translate_text('Extracted:', curr_lang)}**")
                             for k, v in st.session_state.extracted_info.items():
-                                k_translated = translate_text(k, curr_lang)
-                                st.write(f"• {k_translated}: {v}")
+                                if v:  # Only show non-empty
+                                    k_translated = translate_text(k, curr_lang)
+                                    st.write(f"• {k_translated}: {v}")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         
+        # ENHANCED: Show editable fields for EACH symptom
         if st.session_state.detected_symptoms:
-            st.markdown(f"#### {translate_text('Fill Missing Info', curr_lang)}")
-            extracted = st.session_state.extracted_info
-            col1, col2 = st.columns(2)
-            with col1:
-                duration = st.text_input(
-                    translate_text("Duration", curr_lang) + 
-                    (" ✓" if "Duration" in extracted else ""),
-                    value=extracted.get("Duration", "")
-                )
-                severity = st.text_input(
-                    translate_text("Severity", curr_lang) + 
-                    (" ✓" if "Severity" in extracted else ""),
-                    value=extracted.get("Severity", "")
-                )
-            with col2:
-                frequency = st.text_input(
-                    translate_text("Frequency", curr_lang) + 
-                    (" ✓" if "Frequency" in extracted else ""),
-                    value=extracted.get("Frequency", "")
-                )
-                factors = st.text_input(
-                    translate_text("Factors", curr_lang) + 
-                    (" ✓" if "Factors" in extracted else ""),
-                    value=extracted.get("Factors", "")
-                )
+            st.markdown(f"#### {translate_text('Review & Edit Symptom Details', curr_lang)}")
+            
+            # Create tabs for each symptom
+            if len(st.session_state.detected_symptoms) > 1:
+                symptom_tabs = st.tabs([s.upper() for s in st.session_state.detected_symptoms])
+                
+                for idx, symptom in enumerate(st.session_state.detected_symptoms):
+                    with symptom_tabs[idx]:
+                        st.markdown(f"**Details for: {symptom}**")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            duration = st.text_input(
+                                f"Duration {idx}",
+                                value=st.session_state.symptom_details[symptom].get("Duration", ""),
+                                key=f"duration_{symptom}"
+                            )
+                            severity = st.text_input(
+                                f"Severity {idx}",
+                                value=st.session_state.symptom_details[symptom].get("Severity", ""),
+                                key=f"severity_{symptom}"
+                            )
+                        with col2:
+                            frequency = st.text_input(
+                                f"Frequency {idx}",
+                                value=st.session_state.symptom_details[symptom].get("Frequency", ""),
+                                key=f"frequency_{symptom}"
+                            )
+                            factors = st.text_input(
+                                f"Factors {idx}",
+                                value=st.session_state.symptom_details[symptom].get("Factors", ""),
+                                key=f"factors_{symptom}"
+                            )
+                        
+                        # Update session state with edited values
+                        st.session_state.symptom_details[symptom] = {
+                            "Duration": duration,
+                            "Severity": severity,
+                            "Frequency": frequency,
+                            "Factors": factors,
+                            "Additional Notes": symptoms_desc
+                        }
+            else:
+                # Single symptom - simpler UI
+                symptom = st.session_state.detected_symptoms[0]
+                col1, col2 = st.columns(2)
+                with col1:
+                    duration = st.text_input(
+                        "Duration",
+                        value=st.session_state.symptom_details[symptom].get("Duration", "")
+                    )
+                    severity = st.text_input(
+                        "Severity",
+                        value=st.session_state.symptom_details[symptom].get("Severity", "")
+                    )
+                with col2:
+                    frequency = st.text_input(
+                        "Frequency",
+                        value=st.session_state.symptom_details[symptom].get("Frequency", "")
+                    )
+                    factors = st.text_input(
+                        "Factors",
+                        value=st.session_state.symptom_details[symptom].get("Factors", "")
+                    )
+                
+                st.session_state.symptom_details[symptom] = {
+                    "Duration": duration,
+                    "Severity": severity,
+                    "Frequency": frequency,
+                    "Factors": factors,
+                    "Additional Notes": symptoms_desc
+                }
         
         st.markdown(f"#### {translate_text('General Health (Optional)', curr_lang)}")
         q1 = st.text_input(
@@ -526,17 +557,10 @@ def show_patient_registration():
         )
         
         if submit:
-            # Save all form data
             st.session_state.reg_form_data.update({
-                'name': name,
-                'age': age,
-                'email': email,
-                'gender': gender,
-                'phone': phone,
-                'password': password,
-                'symptoms_desc': symptoms_desc,
-                'q1': q1,
-                'q2': q2
+                'name': name, 'age': age, 'email': email, 'gender': gender,
+                'phone': phone, 'password': password, 'symptoms_desc': symptoms_desc,
+                'q1': q1, 'q2': q2
             })
             
             if not all([name, email, phone, password, symptoms_desc]):
@@ -546,17 +570,18 @@ def show_patient_registration():
                 st.error(translate_text("❌ Invalid email/phone", curr_lang))
                 return
             
-            # Build symptom data
+            # CRITICAL FIX: Use symptom-specific details, not shared
             per_symptom = {}
-            if st.session_state.detected_symptoms:
-                for sym in st.session_state.detected_symptoms:
-                    per_symptom[sym] = {
-                        "Duration": duration or "Not specified",
-                        "Severity": severity or "Not specified",
-                        "Frequency": frequency or "Not specified",
-                        "Factors": factors or "Not specified",
+            if st.session_state.detected_symptoms and st.session_state.symptom_details:
+                # Each symptom gets its own details
+                for symptom in st.session_state.detected_symptoms:
+                    per_symptom[symptom] = st.session_state.symptom_details.get(symptom, {
+                        "Duration": "Not specified",
+                        "Severity": "Not specified",
+                        "Frequency": "Not specified",
+                        "Factors": "Not specified",
                         "Additional Notes": symptoms_desc
-                    }
+                    })
             else:
                 per_symptom = {
                     "General": {
@@ -600,13 +625,14 @@ def show_patient_registration():
                         st.session_state.access_token = data["access_token"]
                         st.session_state.user_email = email
                         
-                        # Clear form data after successful registration
+                        # Clear form data
                         st.session_state.reg_form_data = {
                             'name': '', 'age': 25, 'email': '', 'gender': 'Male',
                             'phone': '', 'password': '', 'symptoms_desc': '', 'q1': '', 'q2': ''
                         }
                         st.session_state.detected_symptoms = []
                         st.session_state.extracted_info = {}
+                        st.session_state.symptom_details = {}
                         
                         st.success(translate_text("✅ Registration complete!", curr_lang))
                         st.balloons()
@@ -1037,7 +1063,10 @@ def show_patient_dashboard():
         st.error(f"Error: {str(e)}")
 
 def show_doctor_dashboard():
-    """FIXED DOCTOR DASHBOARD - Proper patient viewing and search"""
+    """
+    COMPLETE FIXED DOCTOR DASHBOARD
+    Tab 2 now includes AI Clinical Insights button
+    """
     st.title("👨‍⚕️ Doctor Dashboard")
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
     
@@ -1047,7 +1076,7 @@ def show_doctor_dashboard():
     
     tab1, tab2, tab3, tab4 = st.tabs(["📊 All Patients", "🔍 Patient Details", "🔐 Change Password", "👤 My Profile"])
     
-    # TAB 1: All Patients - Show ONLY Demographics
+    # ==================== TAB 1: All Patients ====================
     with tab1:
         st.subheader("All Registered Patients")
         st.info("💡 Basic patient information - Click 'Patient Details' tab to view full records")
@@ -1059,7 +1088,6 @@ def show_doctor_dashboard():
                 st.success(f"📊 Total Patients: {len(patients)}")
                 
                 if patients:
-                    # Create a table-like display
                     for idx, p in enumerate(patients, 1):
                         with st.container():
                             col1, col2, col3, col4 = st.columns([1, 3, 2, 2])
@@ -1076,7 +1104,6 @@ def show_doctor_dashboard():
                                 st.caption(f"📱 {p.get('phone', 'N/A')}")
                             
                             with col4:
-                                # Show created date if available
                                 if p.get('created_at'):
                                     try:
                                         from datetime import datetime
@@ -1093,7 +1120,7 @@ def show_doctor_dashboard():
         except Exception as e:
             st.error(f"Error loading patients: {str(e)}")
     
-    # TAB 2: Patient Details - Search and View Full Details
+    # ==================== TAB 2: Patient Details WITH AI INSIGHTS ====================
     with tab2:
         st.subheader("🔍 Search and View Patient Details")
         
@@ -1141,7 +1168,6 @@ def show_doctor_dashboard():
                                     st.caption(f"📱 {p.get('phone')}")
                                 
                                 with col3:
-                                    # Fixed: Use unique key and proper callback
                                     if st.button("👁️ View Details", key=f"view_{p['id']}", use_container_width=True):
                                         st.session_state.selected_patient_id = p['id']
                                         st.rerun()
@@ -1152,7 +1178,7 @@ def show_doctor_dashboard():
                 else:
                     st.info("👆 Use the search fields above to find a patient")
                 
-                # Display selected patient details
+                # ==================== DISPLAY SELECTED PATIENT WITH AI INSIGHTS ====================
                 if st.session_state.selected_patient_id:
                     st.markdown("---")
                     st.markdown("## 📄 Patient Details")
@@ -1167,7 +1193,7 @@ def show_doctor_dashboard():
                             patient_data = detail_resp.json()
                             demo = patient_data["demographic"]
                             
-                            # Patient Header
+                            # Patient Header with Back Button
                             col1, col2 = st.columns([3, 1])
                             with col1:
                                 st.markdown(f"### 👤 {demo['name']}")
@@ -1233,11 +1259,93 @@ def show_doctor_dashboard():
                                 else:
                                     st.info("No general health information available")
                             
-                            # Download PDF Button
+                            # ==================== AI CLINICAL INSIGHTS SECTION (NEW!) ====================
                             st.markdown("---")
+                            st.markdown("### 🧠 AI Clinical Insights")
+                            
+                            # Initialize cache key for this patient
+                            cache_key = f'insights_{st.session_state.selected_patient_id}'
+                            
+                            # Button to generate insights
+                            col1, col2, col3 = st.columns([1, 2, 1])
+                            with col2:
+                                if st.button("🤖 Generate AI Clinical Insights", use_container_width=True, type="primary"):
+                                    with st.spinner("🧠 AI analyzing patient data... This may take 10-30 seconds..."):
+                                        try:
+                                            insights_resp = requests.get(
+                                                f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
+                                                headers=headers,
+                                                timeout=60  # Increase timeout for LLM processing
+                                            )
+                                            
+                                            if insights_resp.status_code == 200:
+                                                insights_data = insights_resp.json()
+                                                insights = insights_data["insights"]
+                                                
+                                                # Cache in session state
+                                                st.session_state[cache_key] = {
+                                                    'insights': insights,
+                                                    'generated_at': insights_data.get('generated_at')
+                                                }
+                                                
+                                                st.success("✅ Clinical insights generated successfully!")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Failed to generate insights: {parse_api_error(insights_resp)}")
+                                        except requests.exceptions.Timeout:
+                                            st.error("⏱️ Request timeout. The AI model might be loading for the first time (this takes 1-2 minutes). Please try again.")
+                                        except Exception as e:
+                                            st.error(f"❌ Error: {str(e)}")
+                            
+                            # Display cached insights if available
+                            if cache_key in st.session_state:
+                                cached_insights = st.session_state[cache_key]
+                                
+                                st.markdown("---")
+                                
+                                # Show when generated
+                                if cached_insights.get('generated_at'):
+                                    try:
+                                        from datetime import datetime
+                                        gen_time = datetime.fromtimestamp(cached_insights['generated_at'])
+                                        st.caption(f"🕐 Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                                    except:
+                                        pass
+                                
+                                # Display insights in a nice container
+                                with st.container():
+                                    st.markdown("""
+                                        <style>
+                                        .insights-box {
+                                            background-color: #f0f8ff;
+                                            border-left: 5px solid #1f77b4;
+                                            padding: 20px;
+                                            border-radius: 5px;
+                                            margin: 10px 0;
+                                        }
+                                        </style>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    st.markdown('<div class="insights-box">', unsafe_allow_html=True)
+                                    st.markdown("#### 🧠 Clinical Analysis")
+                                    st.markdown(cached_insights['insights'])
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                                
+                                # Option to clear insights
+                                col1, col2, col3 = st.columns([1, 2, 1])
+                                with col2:
+                                    if st.button("🔄 Regenerate Insights", use_container_width=True):
+                                        del st.session_state[cache_key]
+                                        st.rerun()
+                            else:
+                                st.info("💡 Click the button above to generate AI-powered clinical insights including differential diagnoses, recommended investigations, and red flags.")
+                            
+                            # ==================== DOWNLOAD PDF SECTION ====================
+                            st.markdown("---")
+                            st.markdown("### 📥 Download Report")
                             col1, col2, col3 = st.columns([1, 1, 1])
                             with col2:
-                                if st.button("📥 Download PDF Report", use_container_width=True):
+                                if st.button("📄 Download PDF Report", use_container_width=True):
                                     with st.spinner("Generating PDF..."):
                                         pdf_content = download_pdf(st.session_state.selected_patient_id)
                                         if pdf_content:
@@ -1263,7 +1371,7 @@ def show_doctor_dashboard():
         except Exception as e:
             st.error(f"Error: {str(e)}")
     
-    # TAB 3: Change Password
+    # ==================== TAB 3: Change Password ====================
     with tab3:
         st.subheader("🔐 Change Password")
         st.info("💡 Update your doctor account password")
@@ -1299,7 +1407,7 @@ def show_doctor_dashboard():
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
 
-    # TAB 4: Profile
+    # ==================== TAB 4: Profile ====================
     with tab4:
         st.subheader("👤 My Profile")
         

@@ -24,7 +24,7 @@ python-dotenv==1.0.0
 # AI/LLM (Optional - only if using AI features)
 transformers>=4.38.0
 torch>=2.1.0
-ctransformers==0.2.0
+ctransformers==0.2.27
 
 # Language and Translation
 langdetect==1.0.9

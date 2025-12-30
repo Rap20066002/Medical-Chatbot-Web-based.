@@ -20,7 +20,7 @@ router = APIRouter()
 
 @router.post("/patient/register", response_model=Token)
 async def register_patient(patient_data: PatientCreate):
-    """Register a new patient - FIXED VERSION"""
+    """Register a new patient - FIXED WITH AUTO SUMMARY"""
     try:
         print(f"📝 Registration attempt for: {patient_data.demographic.email}")
         
@@ -40,7 +40,7 @@ async def register_patient(patient_data: PatientCreate):
         hashed_password = hash_password(patient_data.password)
         print("✅ Password hashed")
         
-        # Convert per_symptom from dict of SymptomDetail objects to dict of dicts
+        # Convert per_symptom to dict
         per_symptom_dict = {}
         for symptom_name, symptom_detail in patient_data.per_symptom.items():
             per_symptom_dict[symptom_name] = {
@@ -53,6 +53,17 @@ async def register_patient(patient_data: PatientCreate):
         
         print("✅ Symptom data converted")
         
+        # CRITICAL FIX: Generate summary BEFORE encrypting
+        patient_dict_for_summary = {
+            "demographic": patient_data.demographic.dict(),
+            "per_symptom": per_symptom_dict,
+            "Gen_questions": patient_data.gen_questions
+        }
+        
+        print("🤖 Generating clinical summary...")
+        summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
+        print(f"✅ Summary generated: {summary[:100]}..." if summary else "⚠️ No summary generated")
+        
         # Encrypt patient data
         encrypted_data = {
             "demographic": db_manager.encrypt_dict(patient_data.demographic.dict()),
@@ -64,8 +75,10 @@ async def register_patient(patient_data: PatientCreate):
         
         print("✅ Data encrypted")
         
-        if patient_data.summary:
-            encrypted_data["summary"] = db_manager.encrypt_data(patient_data.summary)
+        # Add summary if generated
+        if summary:
+            encrypted_data["summary"] = db_manager.encrypt_data(summary)
+            print("✅ Summary encrypted and added")
         
         # Save to database
         result = db_manager.patients.insert_one(encrypted_data)

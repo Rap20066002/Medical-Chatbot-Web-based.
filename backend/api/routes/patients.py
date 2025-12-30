@@ -1,6 +1,6 @@
 """
-Patient Routes - COMPLETE VERSION
-All CLI features restored (without chat)
+Patient Routes - COMPLETE LLM INTEGRATION
+All 5 LLM features now working properly
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status, Response
@@ -15,7 +15,7 @@ from models.patient import (
     TokenData,
     PatientDemographic,
     SymptomDetail,
-    PatientUpdate  # ADD THIS LINE - This was missing!
+    PatientUpdate
 )
 from api.middleware.auth import get_current_patient, get_current_doctor, hash_password, verify_password
 from core.database import db_manager
@@ -246,7 +246,6 @@ async def update_health_questions(
     
     return {"message": "Health questions updated and summary regenerated successfully"}
 
-# NEW ENDPOINT - For updating entire patient record
 @router.put("/me")
 async def update_patient(
     update_data: PatientUpdate,
@@ -271,15 +270,12 @@ async def update_patient(
     
     update_dict = {}
     
-    # Update demographic if provided
     if update_data.demographic:
         update_dict["demographic"] = db_manager.encrypt_dict(update_data.demographic.dict())
     
-    # Update symptoms if provided
     if update_data.per_symptom:
         per_symptom_dict = {}
         for symptom_name, symptom_detail in update_data.per_symptom.items():
-            # Handle both SymptomDetail objects and plain dicts
             if isinstance(symptom_detail, SymptomDetail):
                 per_symptom_dict[symptom_name] = {
                     "Duration": symptom_detail.Duration or "",
@@ -293,11 +289,9 @@ async def update_patient(
         
         update_dict["per_symptom"] = db_manager.encrypt_dict(per_symptom_dict)
     
-    # Update general questions if provided
     if update_data.gen_questions:
         update_dict["Gen_questions"] = db_manager.encrypt_dict(update_data.gen_questions)
     
-    # Regenerate summary if any health data changed
     if update_data.per_symptom or update_data.gen_questions:
         current_data = {
             "demographic": db_manager.decrypt_dict(
@@ -315,7 +309,6 @@ async def update_patient(
         if new_summary:
             update_dict["summary"] = db_manager.encrypt_data(new_summary)
     
-    # Perform update
     if update_dict:
         db_manager.patients.update_one(
             {"_id": found_patient["_id"]},
@@ -346,14 +339,12 @@ async def change_password(
             detail="Patient not found"
         )
     
-    # Verify current password
     if not verify_password(password_data.current_password, found_patient.get("password", "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect"
         )
     
-    # Update password
     db_manager.patients.update_one(
         {"_id": found_patient["_id"]},
         {"$set": {"password": hash_password(password_data.new_password)}}
@@ -363,13 +354,28 @@ async def change_password(
 
 @router.post("/analyze-symptoms", response_model=SymptomAnalysisResponse)
 async def analyze_symptoms(request: SymptomAnalysisRequest):
-    """Analyze symptoms - NO AUTH REQUIRED (for registration)"""
-    symptoms = llm_manager.identify_symptoms(request.description)
-    extracted_details = llm_manager.extract_symptom_details(request.description)
+    """
+    FIXED: Analyze symptoms with COMPLETE LLM integration
+    - Detects symptoms
+    - Extracts ALL details (duration, severity, frequency, factors)
+    - Generates intelligent follow-up questions
+    """
+    print(f"\n🔍 ANALYZING SYMPTOMS: {request.description}")
     
+    # STEP 1: Identify symptoms using LLM
+    symptoms = llm_manager.identify_symptoms(request.description)
+    print(f"✅ Identified symptoms: {symptoms}")
+    
+    # STEP 2: Extract details for EACH symptom using LLM
+    extracted_details = llm_manager.extract_symptom_details(request.description)
+    print(f"✅ Extracted details: {extracted_details}")
+    
+    # STEP 3: Generate intelligent follow-up questions
     questions = []
     if symptoms:
+        # Generate questions for the primary symptom
         questions = llm_manager.generate_questions(symptoms[0], extracted_details)
+        print(f"✅ Generated {len(questions)} follow-up questions")
     
     return SymptomAnalysisResponse(
         symptoms=symptoms,
@@ -455,6 +461,45 @@ async def download_patient_pdf(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+@router.get("/{patient_id}/clinical-insights")
+async def get_clinical_insights(
+    patient_id: str,
+    token_data: TokenData = Depends(get_current_doctor)
+):
+    """
+    NEW ENDPOINT: Get AI-powered clinical insights (doctors only)
+    Returns differential diagnoses, investigations, red flags
+    """
+    try:
+        patient = db_manager.patients.find_one({"_id": ObjectId(patient_id)})
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid patient ID"
+        )
+    
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found"
+        )
+    
+    # Decrypt patient data
+    patient_data = {
+        "demographic": db_manager.decrypt_dict(patient["demographic"]),
+        "per_symptom": db_manager.decrypt_dict(patient["per_symptom"]),
+        "Gen_questions": db_manager.decrypt_dict(patient.get("Gen_questions", {}))
+    }
+    
+    # Generate clinical insights using LLM
+    insights = llm_manager.get_clinical_insights(patient_data)
+    
+    return {
+        "patient_id": patient_id,
+        "insights": insights,
+        "generated_at": __import__('time').time()
+    }
+
 @router.get("/", response_model=List[dict])
 async def list_patients(
     search_name: Optional[str] = None,
@@ -468,7 +513,6 @@ async def list_patients(
         try:
             decrypted_demo = db_manager.decrypt_dict(patient["demographic"])
             
-            # Apply filters if provided
             if search_name and search_name.lower() not in decrypted_demo.get("name", "").lower():
                 continue
             if search_email and search_email.lower() not in decrypted_demo.get("email", "").lower():
