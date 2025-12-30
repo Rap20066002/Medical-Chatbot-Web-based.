@@ -1,12 +1,14 @@
 """
-Patient Routes - COMPLETE LLM INTEGRATION
-All 5 LLM features now working properly
+Patient Routes - FIXED CLINICAL INSIGHTS
+Clinical insights now generate in background (no timeout!)
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status, Response
 from typing import List, Dict, Optional
 from bson import ObjectId
 from pydantic import BaseModel, Field, field_validator
+import threading
+import time
 
 from models.patient import (
     PatientResponse,
@@ -461,14 +463,18 @@ async def download_patient_pdf(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-@router.get("/{patient_id}/clinical-insights")
-async def get_clinical_insights(
+# ============================================================================
+# 🚀 FIXED: CLINICAL INSIGHTS - NOW GENERATES IN BACKGROUND (NO TIMEOUT!)
+# ============================================================================
+
+@router.post("/{patient_id}/clinical-insights")
+async def request_clinical_insights(
     patient_id: str,
     token_data: TokenData = Depends(get_current_doctor)
 ):
     """
-    NEW ENDPOINT: Get AI-powered clinical insights (doctors only)
-    Returns differential diagnoses, investigations, red flags
+    ⚡ FIXED: Request clinical insights generation (immediate response)
+    Insights generate in background, doctor can check status
     """
     try:
         patient = db_manager.patients.find_one({"_id": ObjectId(patient_id)})
@@ -484,21 +490,167 @@ async def get_clinical_insights(
             detail="Patient not found"
         )
     
-    # Decrypt patient data
-    patient_data = {
-        "demographic": db_manager.decrypt_dict(patient["demographic"]),
-        "per_symptom": db_manager.decrypt_dict(patient["per_symptom"]),
-        "Gen_questions": db_manager.decrypt_dict(patient.get("Gen_questions", {}))
-    }
+    # Check if insights already exist and are recent (< 1 hour)
+    if "clinical_insights" in patient:
+        insights_time = patient.get("insights_generated_at", 0)
+        current_time = time.time()
+        
+        # If insights exist and are less than 1 hour old, return them
+        if (current_time - insights_time) < 3600:
+            try:
+                existing_insights = db_manager.decrypt_data(patient["clinical_insights"])
+                return {
+                    "status": "completed",
+                    "insights": existing_insights,
+                    "generated_at": insights_time,
+                    "message": "Using cached insights (generated < 1 hour ago)"
+                }
+            except:
+                pass
     
-    # Generate clinical insights using LLM
-    insights = llm_manager.get_clinical_insights(patient_data)
+    # Mark insights as generating
+    db_manager.patients.update_one(
+        {"_id": ObjectId(patient_id)},
+        {
+            "$set": {
+                "insights_status": "generating",
+                "insights_requested_at": time.time(),
+                "insights_requested_by": token_data.email
+            }
+        }
+    )
     
+    print(f"🧠 Starting clinical insights generation for patient {patient_id}")
+    
+    # 🚀 Generate insights in BACKGROUND thread
+    def generate_insights_background():
+        """Background thread to generate clinical insights"""
+        try:
+            print(f"🤖 [BACKGROUND] Generating insights for {patient_id}")
+            
+            # Decrypt patient data
+            patient_data = {
+                "demographic": db_manager.decrypt_dict(patient["demographic"]),
+                "per_symptom": db_manager.decrypt_dict(patient["per_symptom"]),
+                "Gen_questions": db_manager.decrypt_dict(patient.get("Gen_questions", {}))
+            }
+            
+            # Generate insights (this takes 5-7 minutes with LLM)
+            insights = llm_manager.get_clinical_insights(patient_data)
+            
+            if insights:
+                # Update patient with insights when ready
+                db_manager.patients.update_one(
+                    {"_id": ObjectId(patient_id)},
+                    {
+                        "$set": {
+                            "clinical_insights": db_manager.encrypt_data(insights),
+                            "insights_status": "completed",
+                            "insights_generated_at": time.time()
+                        }
+                    }
+                )
+                print(f"✅ [BACKGROUND] Insights completed for {patient_id}")
+            else:
+                db_manager.patients.update_one(
+                    {"_id": ObjectId(patient_id)},
+                    {"$set": {"insights_status": "failed"}}
+                )
+                print(f"⚠️ [BACKGROUND] Insights generation failed for {patient_id}")
+                
+        except Exception as e:
+            print(f"❌ [BACKGROUND] Error generating insights: {str(e)}")
+            db_manager.patients.update_one(
+                {"_id": ObjectId(patient_id)},
+                {"$set": {"insights_status": "failed"}}
+            )
+    
+    # Start background thread (daemon=True means it won't block shutdown)
+    insights_thread = threading.Thread(target=generate_insights_background, daemon=True)
+    insights_thread.start()
+    print("✅ Insights generation started in background thread")
+    
+    # Return immediately - doctor gets instant response!
     return {
+        "status": "generating",
+        "message": "Clinical insights are being generated in the background",
         "patient_id": patient_id,
-        "insights": insights,
-        "generated_at": __import__('time').time()
+        "estimated_time": "5-7 minutes",
+        "tip": "You can close this and check back later - refresh to see results"
     }
+
+
+@router.get("/{patient_id}/clinical-insights")
+async def get_clinical_insights(
+    patient_id: str,
+    token_data: TokenData = Depends(get_current_doctor)
+):
+    """
+    ✅ Check status and get clinical insights when ready
+    """
+    try:
+        patient = db_manager.patients.find_one({"_id": ObjectId(patient_id)})
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid patient ID"
+        )
+    
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found"
+        )
+    
+    # Check insights status
+    insights_status = patient.get("insights_status", "not_requested")
+    
+    if insights_status == "generating":
+        # Still generating
+        requested_at = patient.get("insights_requested_at", time.time())
+        elapsed = int(time.time() - requested_at)
+        
+        return {
+            "status": "generating",
+            "message": f"Insights are being generated... ({elapsed}s elapsed)",
+            "patient_id": patient_id,
+            "elapsed_seconds": elapsed,
+            "estimated_remaining": max(0, 420 - elapsed)  # 7 minutes = 420 seconds
+        }
+    
+    elif insights_status == "completed":
+        # Insights ready!
+        try:
+            insights = db_manager.decrypt_data(patient["clinical_insights"])
+            generated_at = patient.get("insights_generated_at")
+            
+            return {
+                "status": "completed",
+                "insights": insights,
+                "generated_at": generated_at,
+                "patient_id": patient_id
+            }
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error decrypting insights: {str(e)}"
+            )
+    
+    elif insights_status == "failed":
+        return {
+            "status": "failed",
+            "message": "Clinical insights generation failed. Please try again.",
+            "patient_id": patient_id
+        }
+    
+    else:
+        # Not requested yet
+        return {
+            "status": "not_requested",
+            "message": "Clinical insights have not been requested yet",
+            "patient_id": patient_id
+        }
+
 
 @router.get("/", response_model=List[dict])
 async def list_patients(

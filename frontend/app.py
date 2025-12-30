@@ -1294,39 +1294,135 @@ def show_doctor_dashboard():
                     st.markdown("### 🧠 AI Clinical Insights")
                     st.info("💡 Differential diagnoses, investigations & red flags")
 
-                    cache_key = f"insights_{st.session_state.selected_patient_id}"
+                    # Initialize insights state for this patient
+                    insights_state_key = f"insights_state_{st.session_state.selected_patient_id}"
+                    if insights_state_key not in st.session_state:
+                        st.session_state[insights_state_key] = {
+                            "status": "not_requested",
+                            "insights": None,
+                            "last_checked": 0
+                        }
 
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2:
-                        if st.button(
-                            "🤖 Generate Clinical Insights",
-                            use_container_width=True,
-                            type="primary",
-                            key="generate_insights_btn"
-                        ):
-                            with st.spinner("🧠 AI analyzing patient data..."):
-                                try:
-                                    r = requests.get(
-                                        f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
-                                        headers=headers,
-                                        timeout=60
-                                    )
-                                    if r.status_code == 200:
-                                        data = r.json()
-                                        st.session_state[cache_key] = {
-                                            "insights": data["insights"],
-                                            "generated_at": data.get("generated_at")
-                                        }
-                                        st.success("Insights generated")
+                    current_state = st.session_state[insights_state_key]
+
+                    # ====== STEP 1: Request Insights Button ======
+                    if current_state["status"] == "not_requested":
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            if st.button(
+                                "🤖 Generate Clinical Insights",
+                                use_container_width=True,
+                                type="primary",
+                                key="request_insights_btn"
+                            ):
+                                with st.spinner("🚀 Starting AI analysis..."):
+                                    try:
+                                        # POST request to START generation
+                                        r = requests.post(
+                                            f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
+                                            headers=headers,
+                                            timeout=10  # Short timeout - just to start the process
+                                        )
+                                        
+                                        if r.status_code == 200:
+                                            data = r.json()
+                                            
+                                            if data["status"] == "completed":
+                                                # Already exists!
+                                                st.session_state[insights_state_key] = {
+                                                    "status": "completed",
+                                                    "insights": data["insights"],
+                                                    "last_checked": time.time()
+                                                }
+                                                st.success("✅ Insights ready (from cache)!")
+                                            else:
+                                                # Started generating
+                                                st.session_state[insights_state_key]["status"] = "generating"
+                                                st.success("✅ Generation started! Checking status...")
+                                            
+                                            st.rerun()
+                                        else:
+                                            st.error(parse_api_error(r))
+                                    except Exception as e:
+                                        st.error(f"❌ Error: {str(e)}")
+
+                    # ====== STEP 2: Show Status While Generating ======
+                    elif current_state["status"] == "generating":
+                        st.warning("🤖 AI is analyzing patient data...")
+                        
+                        # Progress indicator
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Check status
+                        try:
+                            status_resp = requests.get(
+                                f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
+                                headers=headers,
+                                timeout=10
+                            )
+                            
+                            if status_resp.status_code == 200:
+                                status_data = status_resp.json()
+                                
+                                if status_data["status"] == "completed":
+                                    # ✅ DONE!
+                                    st.session_state[insights_state_key] = {
+                                        "status": "completed",
+                                        "insights": status_data["insights"],
+                                        "last_checked": time.time()
+                                    }
+                                    progress_bar.progress(100)
+                                    st.success("✅ Insights generated!")
+                                    st.rerun()
+                                    
+                                elif status_data["status"] == "generating":
+                                    # Still working
+                                    elapsed = status_data.get("elapsed_seconds", 0)
+                                    remaining = status_data.get("estimated_remaining", 420)
+                                    
+                                    # Calculate progress (0-100%)
+                                    total_time = 420  # 7 minutes
+                                    progress = min(100, int((elapsed / total_time) * 100))
+                                    progress_bar.progress(progress)
+                                    
+                                    # Show time remaining
+                                    mins_remaining = remaining // 60
+                                    secs_remaining = remaining % 60
+                                    status_text.info(f"⏱️ Time elapsed: {elapsed}s | Estimated remaining: {mins_remaining}m {secs_remaining}s")
+                                    
+                                    # Auto-refresh button
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if st.button("🔄 Check Status Now", use_container_width=True):
+                                            st.rerun()
+                                    with col2:
+                                        if st.button("❌ Cancel", use_container_width=True):
+                                            st.session_state[insights_state_key]["status"] = "not_requested"
+                                            st.rerun()
+                                    
+                                    # Auto-refresh every 10 seconds
+                                    st.info("🔄 This page auto-refreshes every 10 seconds")
+                                    import time
+                                    time.sleep(10)
+                                    st.rerun()
+                                    
+                                elif status_data["status"] == "failed":
+                                    st.error("❌ Generation failed")
+                                    st.session_state[insights_state_key]["status"] = "not_requested"
+                                    if st.button("🔄 Try Again"):
                                         st.rerun()
-                                    else:
-                                        st.error(parse_api_error(r))
-                                except Exception as e:
-                                    st.error(str(e))
+                        
+                        except Exception as e:
+                            st.error(f"Error checking status: {str(e)}")
+                            if st.button("🔄 Retry"):
+                                st.rerun()
 
-                    if cache_key in st.session_state:
-                        cached = st.session_state[cache_key]
-
+                    # ====== STEP 3: Display Completed Insights ======
+                    elif current_state["status"] == "completed":
+                        st.success("✅ Clinical Insights Generated")
+                        
+                        # Display insights in styled box
                         st.markdown("""
                         <style>
                         .insights-box {
@@ -1338,25 +1434,28 @@ def show_doctor_dashboard():
                         }
                         </style>
                         """, unsafe_allow_html=True)
-
+                        
                         st.markdown('<div class="insights-box">', unsafe_allow_html=True)
                         st.markdown("#### 🧠 Clinical Analysis")
-                        st.markdown(cached["insights"])
+                        st.markdown(current_state["insights"])
                         st.markdown("</div>", unsafe_allow_html=True)
-
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            if st.button("🔄 Regenerate"):
-                                del st.session_state[cache_key]
+                        
+                        # Action buttons
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button("🔄 Regenerate", use_container_width=True):
+                                # Clear cached insights
+                                st.session_state[insights_state_key] = {
+                                    "status": "not_requested",
+                                    "insights": None,
+                                    "last_checked": 0
+                                }
                                 st.rerun()
-                        with c2:
-                            if st.button("📋 View as Text"):
-                                st.code(cached["insights"], language="markdown")
-                        with c3:
+                        with col2:
+                            if st.button("📋 View as Text", use_container_width=True):
+                                st.code(current_state["insights"], language="markdown")
+                        with col3:
                             st.success("📄 Included in PDF")
-
-                    else:
-                        st.info("Click **Generate Clinical Insights** above")
 
                     # ==================== PDF DOWNLOAD ====================
                     st.markdown("---")
