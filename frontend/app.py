@@ -455,19 +455,60 @@ def show_patient_registration():
             'phone': '', 'password': '', 'symptoms_desc': '', 
             'q1': '', 'q2': '', 'q3': '', 'q4': ''
         }
-    
+
     if 'symptom_details' not in st.session_state:
         st.session_state.symptom_details = {}
-    
+
     if 'analysis_result' not in st.session_state:
         st.session_state.analysis_result = None
-    
+
     if 'current_language' not in st.session_state:
         st.session_state.current_language = 'en'
-    
+
     if 'pending_language_change' not in st.session_state:
         st.session_state.pending_language_change = None
-    
+
+
+    # ============================================================
+    # LANGUAGE CONFIRMATION DIALOG
+    # ============================================================
+    if st.session_state.pending_language_change:
+        lang_info = st.session_state.pending_language_change
+        
+        st.warning(f"🌐 I noticed you're typing in **{lang_info['name']}**")
+        st.info("Would you like to switch the interface to that language?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button(
+                f"✅ Yes, switch to {lang_info['name']}", 
+                use_container_width=True,
+                key="accept_lang_change"
+            ):
+                # Switch language
+                old_lang = st.session_state.current_language
+                st.session_state.current_language = lang_info['code']
+                st.session_state.pending_language_change = None
+                
+                st.success(f"✅ Switched to {lang_info['name']}!")
+                st.info("💾 All your entered data has been preserved")
+                time.sleep(1)
+                st.rerun()
+        
+        with col2:
+            if st.button(
+                "❌ No, keep current language", 
+                use_container_width=True,
+                key="reject_lang_change"
+            ):
+                st.session_state.pending_language_change = None
+                st.info("Continuing in current language")
+                time.sleep(0.5)
+                st.rerun()
+        
+        st.markdown("---")
+
     # ============================================================
     # LANGUAGE DETECTION HELPER
     # ============================================================
@@ -534,46 +575,6 @@ def show_patient_registration():
         if st.session_state.current_language == 'en':
             return english_text
         return translate_text(english_text, st.session_state.current_language)
-    
-    # ============================================================
-    # LANGUAGE CONFIRMATION DIALOG
-    # ============================================================
-    if st.session_state.pending_language_change:
-        lang_info = st.session_state.pending_language_change
-        
-        st.warning(f"🌐 I noticed you're typing in **{lang_info['name']}**")
-        st.info("Would you like to switch the interface to that language?")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button(
-                f"✅ Yes, switch to {lang_info['name']}", 
-                use_container_width=True,
-                key="accept_lang_change"
-            ):
-                # Switch language
-                old_lang = st.session_state.current_language
-                st.session_state.current_language = lang_info['code']
-                st.session_state.pending_language_change = None
-                
-                st.success(f"✅ Switched to {lang_info['name']}!")
-                st.info("💾 All your entered data has been preserved")
-                time.sleep(1)
-                st.rerun()
-        
-        with col2:
-            if st.button(
-                "❌ No, keep current language", 
-                use_container_width=True,
-                key="reject_lang_change"
-            ):
-                st.session_state.pending_language_change = None
-                st.info("Continuing in current language")
-                time.sleep(0.5)
-                st.rerun()
-        
-        st.markdown("---")
     
     # ============================================================
     # MANUAL LANGUAGE SELECTOR
@@ -715,7 +716,7 @@ def show_patient_registration():
                     resp = requests.post(
                         f"{API_BASE_URL}/api/patients/analyze-symptoms",
                         json={"description": symptoms_english},
-                        timeout=30
+                        timeout=None
                     )
                     
                     if resp.status_code == 200:
@@ -1171,21 +1172,15 @@ def show_patient_dashboard():
                     if pdf:
                         st.download_button("💾 Save PDF", pdf, f"{demo['name']}_Report.pdf", "application/pdf")
         
-        # ============================================================
         # TAB 2: FIXED RECORDS WITH AUTO-REFRESH (NO TIMEOUT LIMIT)
-        # ============================================================
         with tab2:
             st.subheader("🩺 Health Records")
             
             # Check summary status
             summary_status = patient_data.get("summary_status", "unknown")
             
-            # ⚡ KEY FIX: Initialize auto-refresh state
-            if 'auto_refresh_enabled' not in st.session_state:
-                st.session_state.auto_refresh_enabled = True
-            
+            # ⚡ KEY FIX: Auto-refresh while generating
             if summary_status == "generating":
-                # Summary still being generated
                 st.warning("🤖 **AI Clinical Summary is being generated...**")
                 
                 # Pulsing animation
@@ -1233,21 +1228,17 @@ def show_patient_dashboard():
                         st.rerun()
                 
                 with col2:
-                    st.info("🔁 Auto-refresh: 15s")
+                    st.info("🔁 Auto-refresh: Every 15s")
                 
                 st.success("💡 **Tip:** Summary will appear here automatically when ready!")
                 
-                # ⚡ AUTO-REFRESH - Keeps checking until summary is ready
-                st.session_state.auto_refresh_enabled = True
+                # ⚡ CRITICAL FIX: Auto-refresh every 15 seconds
                 time.sleep(15)
                 st.rerun()
                 
             elif summary_status == "completed":
                 # ✅ SUMMARY READY - Display it!
                 st.success("✅ **AI Clinical Summary Generated Successfully!**")
-                
-                # ⚡ DISABLE AUTO-REFRESH once summary is displayed
-                st.session_state.auto_refresh_enabled = False
                 
                 with st.expander("📋 View Clinical Summary", expanded=True):
                     st.markdown(patient_data["summary"])
@@ -1267,7 +1258,6 @@ def show_patient_dashboard():
             elif summary_status == "failed":
                 st.error("⚠️ **AI summary generation failed.**")
                 st.info("Don't worry - your symptom data is safe. You can view your symptoms below.")
-                st.session_state.auto_refresh_enabled = False
             
             else:
                 # Old patient without status OR unknown status
@@ -1277,7 +1267,6 @@ def show_patient_dashboard():
                         st.markdown(patient_data["summary"])
                 else:
                     st.info("ℹ️ No clinical summary available yet")
-                st.session_state.auto_refresh_enabled = False
             
             # ============================================================
             # SHOW SYMPTOMS (ALWAYS VISIBLE)
