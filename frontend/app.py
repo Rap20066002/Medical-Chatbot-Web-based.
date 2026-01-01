@@ -81,45 +81,95 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
 
-def translate_text(text, target_lang='en'):
-    """Translate text to target language"""
-    if target_lang == 'en':
+def translate_text(text, target_lang='en', source_lang='auto'):
+    """
+    Translate text to target language
+    ✅ FIXED: Better error handling, increased timeout, graceful fallback
+    """
+    if not text or target_lang == 'en':
         return text
-    try:
-        resp = requests.post(
-            f"{API_BASE_URL}/api/language/translate",
-            json={"text": text, "source": "en", "target": target_lang}
-        )
-        if resp.status_code == 200:
-            return resp.json()["translated"]
-    except:
-        pass
-    return text
-
-def detect_language_and_confirm(user_text):
-    """Detect language and show confirmation dialog"""
-    if len(user_text.strip()) < 10:
-        return False
     
     try:
+        # ✅ FIX: Increase timeout to 15 seconds
         resp = requests.post(
-            f"{API_BASE_URL}/api/language/detect",
-            json={"text": user_text}
+            f"{API_BASE_URL}/api/language/translate",
+            json={
+                "text": text,
+                "source": source_lang,
+                "target": target_lang
+            },
+            timeout=15  # Increased from default 5s
         )
         
         if resp.status_code == 200:
             data = resp.json()
-            detected = data["detected"]
-            lang_name = data["language_name"]
+            return data.get("translated", text)
+        else:
+            # Log error but don't break UI
+            print(f"⚠️  Translation failed: {resp.status_code}")
+            return text  # Return original text as fallback
+    
+    except requests.exceptions.Timeout:
+        # ✅ FIX: Don't show error, just use original text
+        print("⚠️  Translation timeout - using original text")
+        return text
+    
+    except requests.exceptions.ConnectionError:
+        print("⚠️  Translation service unavailable - using original text")
+        return text
+    
+    except Exception as e:
+        print(f"⚠️  Translation error: {str(e)} - using original text")
+        return text
+
+
+def detect_language_and_confirm(user_text):
+    """
+    Detect language and show confirmation dialog
+    ✅ FIXED: Better error handling, no red error messages
+    """
+    if len(user_text.strip()) < 10:
+        return False
+    
+    try:
+        # ✅ FIX: Increase timeout
+        resp = requests.post(
+            f"{API_BASE_URL}/api/language/detect",
+            json={"text": user_text},
+            timeout=10  # Increased from default 5s
+        )
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            detected = data.get("detected")
+            lang_name = data.get("language_name")
+            confidence = data.get("confidence", "low")
             
-            if data["confidence"] == "high" and detected != st.session_state.current_language:
+            # Only prompt if high confidence and different from current
+            if confidence == "high" and detected != st.session_state.current_language:
                 st.session_state.pending_language_change = {
                     "code": detected,
                     "name": lang_name
                 }
                 return True
-    except:
-        pass
+        else:
+            # ✅ FIX: Don't show error, just skip detection
+            print(f"⚠️  Language detection returned {resp.status_code}")
+            return False
+    
+    except requests.exceptions.Timeout:
+        # ✅ FIX: Silent timeout - don't disrupt user experience
+        print("⚠️  Language detection timeout")
+        return False
+    
+    except requests.exceptions.ConnectionError:
+        print("⚠️  Language detection service unavailable")
+        return False
+    
+    except Exception as e:
+        print(f"⚠️  Language detection error: {str(e)}")
+        return False
+    
     return False
 
 def render_language_confirmation():
@@ -628,10 +678,22 @@ def show_patient_registration():
     # GET TRANSLATED LABELS
     # ============================================================
     def get_label(english_text):
-        """Get translated label based on current language"""
+        """
+        Get translated label based on current language
+        ✅ FIXED: Graceful fallback if translation fails
+        """
         if st.session_state.current_language == 'en':
             return english_text
-        return translate_text(english_text, st.session_state.current_language)
+        
+        # Try to translate
+        translated = translate_text(
+            english_text,
+            st.session_state.current_language,
+            source_lang='en'
+        )
+        
+        # If translation failed, return English (better than error)
+        return translated if translated else english_text
     
     # ============================================================
     # MANUAL LANGUAGE SELECTOR
@@ -1777,8 +1839,8 @@ def show_patient_dashboard():
 
 def show_doctor_dashboard():
     """
-    COMPLETE DOCTOR DASHBOARD
-    All API calls with try-catch error handling
+    COMPLETE DOCTOR DASHBOARD - FIXED VERSION
+    Removed non-functional Copy & Print buttons from Clinical Insights
     """
     st.title("👨‍⚕️ Doctor Dashboard")
     headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
@@ -2136,7 +2198,9 @@ def show_doctor_dashboard():
                                 except Exception as e:
                                     st.error(f"⚠️ Error: {str(e)}")
 
-                            # DISPLAY RESULTS
+                            # ===================================================================
+                            #  DISPLAY RESULTS
+                            # ===================================================================
                             elif current_state["status"] == "completed":
                                 st.success("✅ **Clinical Insights Generated!**")
                                 
@@ -2158,16 +2222,24 @@ def show_doctor_dashboard():
                                 st.markdown(current_state["insights"])
                                 st.markdown("</div>", unsafe_allow_html=True)
                                 
-                                # ⚠️ CLARIFY: Insights are temporary, NOT in PDF
+                                # ⚠️ Important note about insights
                                 st.info("💡 **Note:** These insights are for your reference only and are NOT saved to the patient's permanent record or included in the PDF report.")
                                 
                                 st.markdown("---")
                                 
-                                # Action buttons
-                                col1, col2, col3 = st.columns(3)
+                                # ✅ FIXED: Only show functional Regenerate button (centered)
+                                col1, col2, col3 = st.columns([1, 1, 1])
                                 
                                 with col1:
-                                    if st.button("🔄 Regenerate", use_container_width=True, key="regen_insights"):
+                                    pass  # Empty for spacing
+                                
+                                with col2:
+                                    # Only functional button
+                                    if st.button(
+                                        "🔄 Regenerate Insights",
+                                        use_container_width=True,
+                                        key="regen_insights"
+                                    ):
                                         st.session_state[insights_key] = {
                                             "status": "not_requested",
                                             "insights": None,
@@ -2175,49 +2247,8 @@ def show_doctor_dashboard():
                                         }
                                         st.rerun()
                                 
-                                with col2:
-                                    # ✅ FIXED: Copy to clipboard button
-                                    insights_text = current_state["insights"]
-                                    clean_text = insights_text.replace('`', '').replace('\n', ' ').replace("'", "\\'")
-                                    
-                                    st.markdown(f"""
-                                    <button onclick="navigator.clipboard.writeText(`{clean_text}`)
-                                        .then(() => alert('Insights copied to clipboard!'))
-                                        .catch(() => alert('Failed to copy. Please select and copy manually.'))"
-                                        style="
-                                            width: 100%;
-                                            padding: 0.5rem;
-                                            background-color: #4CAF50;
-                                            color: white;
-                                            border: none;
-                                            border-radius: 4px;
-                                            cursor: pointer;
-                                            font-size: 1rem;
-                                        ">
-                                        📋 Copy Text
-                                    </button>
-                                    """, unsafe_allow_html=True)
-                                
                                 with col3:
-                                    # ✅ FIXED: Print button
-                                    if st.button("🖨️ Print", use_container_width=True, key="print_insights"):
-                                        insights_html = insights_text.replace('\n', '<br>')
-                                        patient_name = demo.get("name", "Unknown")
-                                        
-                                        st.markdown(f"""
-                                        <script>
-                                            var printWindow = window.open('', '', 'height=600,width=800');
-                                            printWindow.document.write('<html><head><title>Clinical Insights</title>');
-                                            printWindow.document.write('<style>body{{font-family: Arial; padding: 20px; line-height: 1.6;}}</style>');
-                                            printWindow.document.write('</head><body>');
-                                            printWindow.document.write('<h2>Clinical Insights - Patient: {patient_name}</h2>');
-                                            printWindow.document.write('<hr>');
-                                            printWindow.document.write('<div>{insights_html}</div>');
-                                            printWindow.document.write('</body></html>');
-                                            printWindow.document.close();
-                                            printWindow.print();
-                                        </script>
-                                        """, unsafe_allow_html=True)
+                                    pass  # Empty for spacing
 
                             # PDF Download
                             st.markdown("---")
