@@ -41,6 +41,13 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
+        color: #000000;
+    }
+    .feature-card h3 {
+    color: #1f77b4; /* heading color */
+    }
+    .feature-card p {
+        color: #333333; /* paragraph color */
     }
     .stButton>button {
         width: 100%;
@@ -486,14 +493,64 @@ def show_patient_registration():
                 use_container_width=True,
                 key="accept_lang_change"
             ):
-                # Switch language
+                # ✅ FIX: Store old language for translation
                 old_lang = st.session_state.current_language
-                st.session_state.current_language = lang_info['code']
+                new_lang = lang_info['code']
+                
+                # Switch language
+                st.session_state.current_language = new_lang
                 st.session_state.pending_language_change = None
+                
+                # ⚡ CRITICAL FIX: Re-translate LLM questions if they exist
+                if st.session_state.get("analysis_result"):
+                    analysis = st.session_state.analysis_result
+                    
+                    # Re-translate symptom names
+                    if analysis.get('symptoms') and new_lang != 'en':
+                        try:
+                            translated_symptoms = []
+                            for sym in analysis['symptoms']:
+                                translated = translate_text(
+                                    sym,
+                                    target_lang=new_lang,
+                                    source_lang='en'
+                                )
+                                translated_symptoms.append(translated)
+                            analysis['symptoms_translated'] = translated_symptoms
+                        except Exception as e:
+                            print(f"Error translating symptoms: {e}")
+                    elif new_lang == 'en':
+                        # Switching back to English - use original
+                        analysis['symptoms_translated'] = analysis.get('symptoms', [])
+                    
+                    # Re-translate follow-up questions (THE KEY FIX!)
+                    if analysis.get('questions') and new_lang != 'en':
+                        try:
+                            translated_questions = []
+                            for q in analysis['questions']:
+                                translated = translate_text(
+                                    q,
+                                    target_lang=new_lang,
+                                    source_lang='en'
+                                )
+                                translated_questions.append(translated)
+                            analysis['questions_translated'] = translated_questions
+                            print(f"✅ Re-translated {len(translated_questions)} questions to {lang_info['name']}")
+                        except Exception as e:
+                            print(f"Error translating questions: {e}")
+                            # Fallback to original English questions
+                            analysis['questions_translated'] = analysis.get('questions', [])
+                    elif new_lang == 'en':
+                        # Switching back to English - use original
+                        analysis['questions_translated'] = analysis.get('questions', [])
+                    
+                    # Update the stored analysis
+                    st.session_state.analysis_result = analysis
                 
                 st.success(f"✅ Switched to {lang_info['name']}!")
                 st.info("💾 All your entered data has been preserved")
-                time.sleep(1)
+                st.info("🔄 LLM-generated questions have been translated")
+                time.sleep(1.5)
                 st.rerun()
         
         with col2:
@@ -600,10 +657,48 @@ def show_patient_registration():
                 
                 if lang_dict[selected] != st.session_state.current_language:
                     if st.button("Apply Language Change", key="apply_manual_lang"):
-                        st.session_state.current_language = lang_dict[selected]
+                        # ✅ FIX: Store old and new language
+                        old_lang = st.session_state.current_language
+                        new_lang = lang_dict[selected]
+                        
+                        st.session_state.current_language = new_lang
+                        
+                        # ⚡ Re-translate LLM questions if they exist
+                        if st.session_state.get("analysis_result"):
+                            analysis = st.session_state.analysis_result
+                            
+                            # Re-translate symptom names
+                            if analysis.get('symptoms') and new_lang != 'en':
+                                try:
+                                    translated_symptoms = []
+                                    for sym in analysis['symptoms']:
+                                        translated = translate_text(sym, target_lang=new_lang, source_lang='en')
+                                        translated_symptoms.append(translated)
+                                    analysis['symptoms_translated'] = translated_symptoms
+                                except:
+                                    pass
+                            elif new_lang == 'en':
+                                analysis['symptoms_translated'] = analysis.get('symptoms', [])
+                            
+                            # Re-translate follow-up questions
+                            if analysis.get('questions') and new_lang != 'en':
+                                try:
+                                    translated_questions = []
+                                    for q in analysis['questions']:
+                                        translated = translate_text(q, target_lang=new_lang, source_lang='en')
+                                        translated_questions.append(translated)
+                                    analysis['questions_translated'] = translated_questions
+                                except:
+                                    analysis['questions_translated'] = analysis.get('questions', [])
+                            elif new_lang == 'en':
+                                analysis['questions_translated'] = analysis.get('questions', [])
+                            
+                            st.session_state.analysis_result = analysis
+                        
                         st.success(f"✅ Language changed to {selected}")
                         st.info("💾 All your data is preserved")
-                        time.sleep(1)
+                        st.info("🔄 Questions have been translated")
+                        time.sleep(1.5)
                         st.rerun()
         except:
             st.error("Language service unavailable")
@@ -1172,14 +1267,18 @@ def show_patient_dashboard():
                     if pdf:
                         st.download_button("💾 Save PDF", pdf, f"{demo['name']}_Report.pdf", "application/pdf")
         
-        # TAB 2: FIXED RECORDS WITH AUTO-REFRESH (NO TIMEOUT LIMIT)
         with tab2:
             st.subheader("🩺 Health Records")
             
-            # Check summary status
+            # ✅ FIX: Get summary status with proper default
             summary_status = patient_data.get("summary_status", "unknown")
             
-            # ⚡ KEY FIX: Auto-refresh while generating
+            print(f"DEBUG: summary_status = {summary_status}")  # Debug log
+            print(f"DEBUG: summary exists = {'summary' in patient_data}")  # Debug log
+            
+            # ============================================================
+            # CASE 1: Summary is being generated
+            # ============================================================
             if summary_status == "generating":
                 st.warning("🤖 **AI Clinical Summary is being generated...**")
                 
@@ -1232,44 +1331,78 @@ def show_patient_dashboard():
                 
                 st.success("💡 **Tip:** Summary will appear here automatically when ready!")
                 
-                # ⚡ CRITICAL FIX: Auto-refresh every 15 seconds
+                # ⚡ Auto-refresh every 15 seconds
                 time.sleep(15)
                 st.rerun()
-                
+            
+            # ============================================================
+            # CASE 2: Summary generation completed
+            # ============================================================
             elif summary_status == "completed":
-                # ✅ SUMMARY READY - Display it!
                 st.success("✅ **AI Clinical Summary Generated Successfully!**")
                 
-                with st.expander("📋 View Clinical Summary", expanded=True):
-                    st.markdown(patient_data["summary"])
-                    
-                    # Show generation details
-                    if patient_data.get("summary_generated_at"):
-                        gen_time = datetime.fromtimestamp(patient_data["summary_generated_at"])
+                if patient_data.get("summary"):
+                    with st.expander("📋 View Clinical Summary", expanded=True):
+                        st.markdown(patient_data["summary"])
                         
-                        if patient_data.get("created_at"):
-                            duration = int(patient_data["summary_generated_at"] - patient_data["created_at"])
-                            duration_mins = duration // 60
-                            duration_secs = duration % 60
-                            st.caption(f"✅ Generated in {duration_mins}m {duration_secs}s on {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                        else:
-                            st.caption(f"Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        # Show generation details
+                        if patient_data.get("summary_generated_at"):
+                            gen_time = datetime.fromtimestamp(patient_data["summary_generated_at"])
+                            
+                            if patient_data.get("created_at"):
+                                duration = int(patient_data["summary_generated_at"] - patient_data["created_at"])
+                                duration_mins = duration // 60
+                                duration_secs = duration % 60
+                                st.caption(f"✅ Generated in {duration_mins}m {duration_secs}s on {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                            else:
+                                st.caption(f"Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                else:
+                    st.error("⚠️ Summary status is 'completed' but no summary found!")
+                    st.info("This shouldn't happen. Please contact support.")
             
+            # ============================================================
+            # CASE 3: Summary generation failed
+            # ============================================================
             elif summary_status == "failed":
                 st.error("⚠️ **AI summary generation failed.**")
                 st.info("Don't worry - your symptom data is safe. You can view your symptoms below.")
+                
+                # Offer retry option
+                if st.button("🔄 Retry Summary Generation", use_container_width=True, key="retry_summary_btn"):
+                    with st.spinner("Retrying..."):
+                        try:
+                            # Trigger summary regeneration
+                            retry_resp = requests.post(
+                                f"{API_BASE_URL}/api/patients/me/regenerate-summary",
+                                headers=headers,
+                                timeout=10
+                            )
+                            
+                            if retry_resp.status_code == 200:
+                                st.success("✅ Summary generation restarted!")
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error("Failed to restart generation")
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
             
+            # ============================================================
+            # CASE 4: Old patient OR unknown status
+            # ============================================================
             else:
-                # Old patient without status OR unknown status
+                # Check if summary exists (for old patients registered before status tracking)
                 if patient_data.get("summary"):
                     st.success("✅ Clinical Summary Available")
                     with st.expander("📋 View Summary", expanded=True):
                         st.markdown(patient_data["summary"])
                 else:
+                    # No summary and no generating status
                     st.info("ℹ️ No clinical summary available yet")
+                    st.caption("💡 New registrations will have AI summaries generated automatically")
             
             # ============================================================
-            # SHOW SYMPTOMS (ALWAYS VISIBLE)
+            # ALWAYS SHOW: Reported Symptoms
             # ============================================================
             st.markdown("---")
             st.markdown("#### 📌 Reported Symptoms")
@@ -1294,7 +1427,9 @@ def show_patient_dashboard():
             else:
                 st.info("No symptoms recorded")
             
-            # General Health Information
+            # ============================================================
+            # ALWAYS SHOW: General Health Information
+            # ============================================================
             st.markdown("---")
             st.markdown("#### 🏥 General Health Information")
             
@@ -1305,7 +1440,7 @@ def show_patient_dashboard():
                         st.write(f"**{question}**")
                         st.write(f"↳ {answer}")
             else:
-                st.info("No general health information recorded")      
+                st.info("No general health information recorded")    
         
         # === TAB 3: ENHANCED UPDATE SECTION ===
         with tab3:
@@ -2023,11 +2158,16 @@ def show_doctor_dashboard():
                                 st.markdown(current_state["insights"])
                                 st.markdown("</div>", unsafe_allow_html=True)
                                 
+                                # ⚠️ CLARIFY: Insights are temporary, NOT in PDF
+                                st.info("💡 **Note:** These insights are for your reference only and are NOT saved to the patient's permanent record or included in the PDF report.")
+                                
                                 st.markdown("---")
-                                col1, col2 = st.columns(2)
+                                
+                                # Action buttons
+                                col1, col2, col3 = st.columns(3)
                                 
                                 with col1:
-                                    if st.button("🔄 Regenerate", use_container_width=True):
+                                    if st.button("🔄 Regenerate", use_container_width=True, key="regen_insights"):
                                         st.session_state[insights_key] = {
                                             "status": "not_requested",
                                             "insights": None,
@@ -2036,7 +2176,48 @@ def show_doctor_dashboard():
                                         st.rerun()
                                 
                                 with col2:
-                                    st.success("📄 Included in PDF")
+                                    # ✅ FIXED: Copy to clipboard button
+                                    insights_text = current_state["insights"]
+                                    clean_text = insights_text.replace('`', '').replace('\n', ' ').replace("'", "\\'")
+                                    
+                                    st.markdown(f"""
+                                    <button onclick="navigator.clipboard.writeText(`{clean_text}`)
+                                        .then(() => alert('Insights copied to clipboard!'))
+                                        .catch(() => alert('Failed to copy. Please select and copy manually.'))"
+                                        style="
+                                            width: 100%;
+                                            padding: 0.5rem;
+                                            background-color: #4CAF50;
+                                            color: white;
+                                            border: none;
+                                            border-radius: 4px;
+                                            cursor: pointer;
+                                            font-size: 1rem;
+                                        ">
+                                        📋 Copy Text
+                                    </button>
+                                    """, unsafe_allow_html=True)
+                                
+                                with col3:
+                                    # ✅ FIXED: Print button
+                                    if st.button("🖨️ Print", use_container_width=True, key="print_insights"):
+                                        insights_html = insights_text.replace('\n', '<br>')
+                                        patient_name = demo.get("name", "Unknown")
+                                        
+                                        st.markdown(f"""
+                                        <script>
+                                            var printWindow = window.open('', '', 'height=600,width=800');
+                                            printWindow.document.write('<html><head><title>Clinical Insights</title>');
+                                            printWindow.document.write('<style>body{{font-family: Arial; padding: 20px; line-height: 1.6;}}</style>');
+                                            printWindow.document.write('</head><body>');
+                                            printWindow.document.write('<h2>Clinical Insights - Patient: {patient_name}</h2>');
+                                            printWindow.document.write('<hr>');
+                                            printWindow.document.write('<div>{insights_html}</div>');
+                                            printWindow.document.write('</body></html>');
+                                            printWindow.document.close();
+                                            printWindow.print();
+                                        </script>
+                                        """, unsafe_allow_html=True)
 
                             # PDF Download
                             st.markdown("---")

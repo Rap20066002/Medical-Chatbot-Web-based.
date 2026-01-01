@@ -72,7 +72,10 @@ async def get_my_profile(token_data: TokenData = Depends(get_current_patient)):
         "demographic": db_manager.decrypt_dict(found_patient["demographic"]),
         "per_symptom": db_manager.decrypt_dict(found_patient["per_symptom"]),
         "gen_questions": db_manager.decrypt_dict(found_patient.get("Gen_questions", {})),
-        "created_at": found_patient.get("created_at")
+        "created_at": found_patient.get("created_at"),
+        # ✅ ADD THESE LINES
+        "summary_status": found_patient.get("summary_status", "unknown"),
+        "summary_generated_at": found_patient.get("summary_generated_at")
     }
     
     if "summary" in found_patient:
@@ -82,6 +85,72 @@ async def get_my_profile(token_data: TokenData = Depends(get_current_patient)):
             decrypted_data["summary"] = None
     
     return PatientResponse(**decrypted_data)
+
+@router.post("/me/regenerate-summary")
+async def regenerate_summary(token_data: TokenData = Depends(get_current_patient)):
+    """Regenerate clinical summary for current patient"""
+    found_patient = None
+    for patient in db_manager.patients.find():
+        try:
+            decrypted_demo = db_manager.decrypt_dict(patient.get("demographic", {}))
+            if decrypted_demo.get("email", "").lower() == token_data.email.lower():
+                found_patient = patient
+                break
+        except:
+            continue
+    
+    if not found_patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found"
+        )
+    
+    # Mark as generating again
+    db_manager.patients.update_one(
+        {"_id": found_patient["_id"]},
+        {"$set": {"summary_status": "generating"}}
+    )
+    
+    # Start background generation
+    import threading
+    
+    def regenerate_background():
+        try:
+            patient_data = {
+                "demographic": db_manager.decrypt_dict(found_patient["demographic"]),
+                "per_symptom": db_manager.decrypt_dict(found_patient["per_symptom"]),
+                "Gen_questions": db_manager.decrypt_dict(found_patient.get("Gen_questions", {}))
+            }
+            
+            summary = llm_manager.summarize_patient_condition(patient_data)
+            
+            if summary:
+                db_manager.patients.update_one(
+                    {"_id": found_patient["_id"]},
+                    {
+                        "$set": {
+                            "summary": db_manager.encrypt_data(summary),
+                            "summary_status": "completed",
+                            "summary_generated_at": time.time()
+                        }
+                    }
+                )
+            else:
+                db_manager.patients.update_one(
+                    {"_id": found_patient["_id"]},
+                    {"$set": {"summary_status": "failed"}}
+                )
+        except Exception as e:
+            print(f"Regeneration error: {e}")
+            db_manager.patients.update_one(
+                {"_id": found_patient["_id"]},
+                {"$set": {"summary_status": "failed"}}
+            )
+    
+    thread = threading.Thread(target=regenerate_background, daemon=True)
+    thread.start()
+    
+    return {"message": "Summary regeneration started"}
 
 @router.get("/me/pdf")
 async def download_my_pdf(token_data: TokenData = Depends(get_current_patient)):
