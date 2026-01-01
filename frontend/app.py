@@ -696,74 +696,116 @@ def show_patient_registration():
         return translated if translated else english_text
     
     # ============================================================
-    # MANUAL LANGUAGE SELECTOR
+    # MANUAL LANGUAGE SELECTOR (SAFE & RERUN-PROOF)
     # ============================================================
+    from requests.exceptions import RequestException
+
     with st.expander("🌐 Change Language Manually"):
         try:
+            # ----------------------------------------------------
+            # Fetch supported languages from backend
+            # ----------------------------------------------------
             resp = requests.get(f"{API_BASE_URL}/api/language/supported", timeout=5)
-            if resp.status_code == 200:
-                langs = resp.json()["languages"]
-                lang_dict = {l["name"]: l["code"] for l in langs}
-                
-                current_name = next(
-                    (n for n, c in lang_dict.items() if c == st.session_state.current_language),
-                    "English"
-                )
-                
-                selected = st.selectbox(
-                    "Select Language:",
-                    options=list(lang_dict.keys()),
-                    index=list(lang_dict.keys()).index(current_name),
-                    key="manual_lang_select"
-                )
-                
-                if lang_dict[selected] != st.session_state.current_language:
-                    if st.button("Apply Language Change", key="apply_manual_lang"):
-                        # ✅ FIX: Store old and new language
-                        old_lang = st.session_state.current_language
-                        new_lang = lang_dict[selected]
-                        
-                        st.session_state.current_language = new_lang
-                        
-                        # ⚡ Re-translate LLM questions if they exist
-                        if st.session_state.get("analysis_result"):
-                            analysis = st.session_state.analysis_result
-                            
-                            # Re-translate symptom names
-                            if analysis.get('symptoms') and new_lang != 'en':
+            resp.raise_for_status()  # ✅ only true API errors go to except
+
+            langs = resp.json().get("languages", [])
+            lang_dict = {l["name"]: l["code"] for l in langs}
+
+            # ----------------------------------------------------
+            # Resolve current language name
+            # ----------------------------------------------------
+            current_name = next(
+                (n for n, c in lang_dict.items()
+                if c == st.session_state.current_language),
+                "English"
+            )
+
+            # ----------------------------------------------------
+            # Language dropdown
+            # ----------------------------------------------------
+            selected = st.selectbox(
+                "Select Language:",
+                options=list(lang_dict.keys()),
+                index=list(lang_dict.keys()).index(current_name),
+                key="manual_lang_select"
+            )
+
+            # ----------------------------------------------------
+            # Apply language change
+            # ----------------------------------------------------
+            if lang_dict[selected] != st.session_state.current_language:
+                if st.button("Apply Language Change", key="apply_manual_lang"):
+
+                    old_lang = st.session_state.current_language
+                    new_lang = lang_dict[selected]
+
+                    st.session_state.current_language = new_lang
+
+                    # --------------------------------------------
+                    # Re-translate LLM generated content (SAFE)
+                    # --------------------------------------------
+                    if st.session_state.get("analysis_result"):
+                        analysis = st.session_state.analysis_result
+
+                        # Translate symptoms
+                        if analysis.get("symptoms"):
+                            if new_lang != "en":
                                 try:
                                     translated_symptoms = []
-                                    for sym in analysis['symptoms']:
-                                        translated = translate_text(sym, target_lang=new_lang, source_lang='en')
-                                        translated_symptoms.append(translated)
-                                    analysis['symptoms_translated'] = translated_symptoms
-                                except:
-                                    pass
-                            elif new_lang == 'en':
-                                analysis['symptoms_translated'] = analysis.get('symptoms', [])
-                            
-                            # Re-translate follow-up questions
-                            if analysis.get('questions') and new_lang != 'en':
+                                    for sym in analysis["symptoms"]:
+                                        translated_symptoms.append(
+                                            translate_text(
+                                                sym,
+                                                target_lang=new_lang,
+                                                source_lang="en"
+                                            )
+                                        )
+                                    analysis["symptoms_translated"] = translated_symptoms
+                                except Exception:
+                                    analysis["symptoms_translated"] = analysis.get("symptoms", [])
+                            else:
+                                analysis["symptoms_translated"] = analysis.get("symptoms", [])
+
+                        # Translate follow-up questions
+                        if analysis.get("questions"):
+                            if new_lang != "en":
                                 try:
                                     translated_questions = []
-                                    for q in analysis['questions']:
-                                        translated = translate_text(q, target_lang=new_lang, source_lang='en')
-                                        translated_questions.append(translated)
-                                    analysis['questions_translated'] = translated_questions
-                                except:
-                                    analysis['questions_translated'] = analysis.get('questions', [])
-                            elif new_lang == 'en':
-                                analysis['questions_translated'] = analysis.get('questions', [])
-                            
-                            st.session_state.analysis_result = analysis
-                        
-                        st.success(f"✅ Language changed to {selected}")
-                        st.info("💾 All your data is preserved")
-                        st.info("🔄 Questions have been translated")
-                        time.sleep(1.5)
-                        st.rerun()
-        except:
-            st.error("Language service unavailable")
+                                    for q in analysis["questions"]:
+                                        translated_questions.append(
+                                            translate_text(
+                                                q,
+                                                target_lang=new_lang,
+                                                source_lang="en"
+                                            )
+                                        )
+                                    analysis["questions_translated"] = translated_questions
+                                except Exception:
+                                    analysis["questions_translated"] = analysis.get("questions", [])
+                            else:
+                                analysis["questions_translated"] = analysis.get("questions", [])
+
+                        st.session_state.analysis_result = analysis
+
+                    # --------------------------------------------
+                    # Success messages (persist-safe)
+                    # --------------------------------------------
+                    st.session_state.language_changed_success = True
+
+                    st.success(f"✅ Language changed to {selected}")
+                    st.info("💾 All your data is preserved")
+                    st.info("🔄 Questions have been translated")
+
+                    time.sleep(1.2)
+                    st.rerun()
+
+        # --------------------------------------------------------
+        # ONLY show error if API actually failed
+        # --------------------------------------------------------
+        except RequestException:
+            if not st.session_state.get("language_changed_success", False):
+                st.error("Language service unavailable")
+
     
     # ============================================================
     # REGISTRATION FORM (WITH TRANSLATION)
@@ -902,6 +944,10 @@ def show_patient_registration():
                                 )
                                 translated_questions.append(translated)
                             analysis['questions_translated'] = translated_questions
+                        else:
+                            # English language - no translation needed
+                            analysis['symptoms_translated'] = analysis.get('symptoms', [])
+                            analysis['questions_translated'] = analysis.get('questions', [])
                         
                         st.session_state.analysis_result = analysis
                         
