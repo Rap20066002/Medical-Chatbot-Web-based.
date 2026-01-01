@@ -6,6 +6,7 @@ All CLI features restored with proper LLM integration
 import streamlit as st
 import requests
 from datetime import datetime
+from requests.exceptions import RequestException
 import os
 import re
 import time
@@ -698,7 +699,6 @@ def show_patient_registration():
     # ============================================================
     # MANUAL LANGUAGE SELECTOR (SAFE & RERUN-PROOF)
     # ============================================================
-    from requests.exceptions import RequestException
 
     with st.expander("🌐 Change Language Manually"):
         try:
@@ -1381,13 +1381,19 @@ def show_patient_dashboard():
             # ✅ FIX: Get summary status with proper default
             summary_status = patient_data.get("summary_status", "unknown")
             
-            print(f"DEBUG: summary_status = {summary_status}")  # Debug log
-            print(f"DEBUG: summary exists = {'summary' in patient_data}")  # Debug log
+            # ============================================================
+            # 🔧 FIX: Smart display based on LLM mode and status
+            # ============================================================
             
-            # ============================================================
-            # CASE 1: Summary is being generated
-            # ============================================================
-            if summary_status == "generating":
+            # Check if LLM is enabled
+            try:
+                api_info = requests.get(f"{API_BASE_URL}/", timeout=5)
+                llm_available = api_info.json().get("llm_available", False) if api_info.status_code == 200 else False
+            except:
+                llm_available = False
+            
+            # CASE 1: Summary is being generated (LLM MODE ONLY)
+            if summary_status == "generating" and llm_available:
                 st.warning("🤖 **AI Clinical Summary is being generated...**")
                 
                 # Pulsing animation
@@ -1443,11 +1449,12 @@ def show_patient_dashboard():
                 time.sleep(15)
                 st.rerun()
             
-            # ============================================================
             # CASE 2: Summary generation completed
-            # ============================================================
             elif summary_status == "completed":
-                st.success("✅ **AI Clinical Summary Generated Successfully!**")
+                if llm_available:
+                    st.success("✅ **AI Clinical Summary Generated Successfully!**")
+                else:
+                    st.success("✅ **Clinical Summary Available**")
                 
                 if patient_data.get("summary"):
                     with st.expander("📋 View Clinical Summary", expanded=True):
@@ -1459,27 +1466,30 @@ def show_patient_dashboard():
                             
                             if patient_data.get("created_at"):
                                 duration = int(patient_data["summary_generated_at"] - patient_data["created_at"])
-                                duration_mins = duration // 60
-                                duration_secs = duration % 60
-                                st.caption(f"✅ Generated in {duration_mins}m {duration_secs}s on {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                                
+                                if llm_available and duration > 60:
+                                    # LLM mode - show generation time
+                                    duration_mins = duration // 60
+                                    duration_secs = duration % 60
+                                    st.caption(f"✅ Generated in {duration_mins}m {duration_secs}s on {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                                else:
+                                    # Non-LLM mode - just show date
+                                    st.caption(f"Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
                             else:
                                 st.caption(f"Generated: {gen_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
                     st.error("⚠️ Summary status is 'completed' but no summary found!")
                     st.info("This shouldn't happen. Please contact support.")
             
-            # ============================================================
             # CASE 3: Summary generation failed
-            # ============================================================
             elif summary_status == "failed":
-                st.error("⚠️ **AI summary generation failed.**")
+                st.error("⚠️ **Summary generation failed.**")
                 st.info("Don't worry - your symptom data is safe. You can view your symptoms below.")
                 
                 # Offer retry option
                 if st.button("🔄 Retry Summary Generation", use_container_width=True, key="retry_summary_btn"):
                     with st.spinner("Retrying..."):
                         try:
-                            # Trigger summary regeneration
                             retry_resp = requests.post(
                                 f"{API_BASE_URL}/api/patients/me/regenerate-summary",
                                 headers=headers,
@@ -1495,9 +1505,7 @@ def show_patient_dashboard():
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
             
-            # ============================================================
             # CASE 4: Old patient OR unknown status
-            # ============================================================
             else:
                 # Check if summary exists (for old patients registered before status tracking)
                 if patient_data.get("summary"):
@@ -1507,7 +1515,10 @@ def show_patient_dashboard():
                 else:
                     # No summary and no generating status
                     st.info("ℹ️ No clinical summary available yet")
-                    st.caption("💡 New registrations will have AI summaries generated automatically")
+                    if llm_available:
+                        st.caption("💡 New registrations will have AI summaries generated automatically")
+                    else:
+                        st.caption("💡 Clinical summaries are generated during registration")
             
             # ============================================================
             # ALWAYS SHOW: Reported Symptoms
@@ -2094,7 +2105,18 @@ def show_doctor_dashboard():
                             # ==================== AI CLINICAL INSIGHTS ====================
                             st.markdown("---")
                             st.markdown("### 🧠 AI Clinical Insights")
-                            st.info("💡 Differential diagnoses, investigations & red flags")
+                            
+                            # Check if LLM is available
+                            try:
+                                api_info = requests.get(f"{API_BASE_URL}/", timeout=5)
+                                llm_available = api_info.json().get("llm_available", False) if api_info.status_code == 200 else False
+                            except:
+                                llm_available = False
+                            
+                            if llm_available:
+                                st.info("💡 AI-powered differential diagnoses, investigations & red flags")
+                            else:
+                                st.info("💡 Clinical review notes and recommended actions")
 
                             # Initialize insights state
                             insights_key = f"insights_{st.session_state.selected_patient_id}"
@@ -2107,17 +2129,27 @@ def show_doctor_dashboard():
 
                             current_state = st.session_state[insights_key]
 
+                            # ============================================================
                             # REQUEST BUTTON
+                            # ============================================================
                             if current_state["status"] == "not_requested":
                                 col1, col2, col3 = st.columns([1, 2, 1])
                                 with col2:
+                                    if llm_available:
+                                        button_text = "🤖 Generate AI Clinical Insights"
+                                        button_help = "AI-powered differential diagnoses and recommendations"
+                                    else:
+                                        button_text = "📋 Generate Clinical Review Notes"
+                                        button_help = "Template-based clinical review and recommendations"
+                                    
                                     if st.button(
-                                        "🤖 Generate Clinical Insights",
+                                        button_text,
                                         use_container_width=True,
                                         type="primary",
-                                        key="req_insights_btn"
+                                        key="req_insights_btn",
+                                        help=button_help
                                     ):
-                                        with st.spinner("🚀 Starting AI analysis..."):
+                                        with st.spinner("🚀 Starting analysis..."):
                                             try:
                                                 r = requests.post(
                                                     f"{API_BASE_URL}/api/patients/{st.session_state.selected_patient_id}/clinical-insights",
@@ -2129,16 +2161,25 @@ def show_doctor_dashboard():
                                                     data = r.json()
                                                     
                                                     if data["status"] == "completed":
+                                                        # Already completed (cached)
                                                         st.session_state[insights_key] = {
                                                             "status": "completed",
                                                             "insights": data["insights"],
                                                             "start_time": None
                                                         }
-                                                        st.success("✅ Insights ready (cached)!")
+                                                        if llm_available:
+                                                            st.success("✅ AI insights ready (cached)!")
+                                                        else:
+                                                            st.success("✅ Clinical notes ready!")
                                                     else:
+                                                        # Started generating
                                                         st.session_state[insights_key]["status"] = "generating"
                                                         st.session_state[insights_key]["start_time"] = time.time()
-                                                        st.success("✅ Generation started!")
+                                                        
+                                                        if llm_available:
+                                                            st.success("✅ AI analysis started!")
+                                                        else:
+                                                            st.success("✅ Generating clinical notes...")
                                                     
                                                     st.rerun()
                                                 else:
@@ -2151,45 +2192,51 @@ def show_doctor_dashboard():
                                             except Exception as e:
                                                 st.error(f"❌ Error: {str(e)}")
 
+                            # ============================================================
                             # GENERATING STATUS
+                            # ============================================================
                             elif current_state["status"] == "generating":
-                                st.warning("🤖 **AI is analyzing patient data...**")
-                                
-                                # Pulsing animation
-                                st.markdown("""
-                                <style>
-                                @keyframes pulse {
-                                    0%, 100% { opacity: 1; }
-                                    50% { opacity: 0.5; }
-                                }
-                                .generating-text {
-                                    animation: pulse 2s ease-in-out infinite;
-                                    font-size: 1.1rem;
-                                    color: #ff9800;
-                                }
-                                </style>
-                                <div class="generating-text">⏳ Generating comprehensive clinical analysis...</div>
-                                """, unsafe_allow_html=True)
-                                
-                                st.info("📊 **Analysis includes:**")
-                                st.markdown("""
-                                - 🔍 Differential diagnoses
-                                - 🧪 Recommended investigations
-                                - ⚠️ Red flag symptoms
-                                - 💊 Clinical considerations
-                                """)
-                                
-                                # Show elapsed time
-                                if current_state.get("start_time"):
-                                    elapsed = int(time.time() - current_state["start_time"])
-                                    mins = elapsed // 60
-                                    secs = elapsed % 60
-                                    st.metric("⏱️ Time Elapsed", f"{mins}m {secs}s")
+                                if llm_available:
+                                    st.warning("🤖 **AI is analyzing patient data...**")
                                     
-                                    if elapsed < 300:
-                                        st.info("⏳ Usually takes 5-10 minutes")
-                                    else:
-                                        st.warning("⏳ Complex case - taking longer than usual...")
+                                    # Pulsing animation
+                                    st.markdown("""
+                                    <style>
+                                    @keyframes pulse {
+                                        0%, 100% { opacity: 1; }
+                                        50% { opacity: 0.5; }
+                                    }
+                                    .generating-text {
+                                        animation: pulse 2s ease-in-out infinite;
+                                        font-size: 1.1rem;
+                                        color: #ff9800;
+                                    }
+                                    </style>
+                                    <div class="generating-text">⏳ Generating comprehensive clinical analysis...</div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    st.info("📊 **AI Analysis includes:**")
+                                    st.markdown("""
+                                    - 🔍 Differential diagnoses
+                                    - 🧪 Recommended investigations
+                                    - ⚠️ Red flag symptoms
+                                    - 💊 Clinical considerations
+                                    """)
+                                    
+                                    # Show elapsed time
+                                    if current_state.get("start_time"):
+                                        elapsed = int(time.time() - current_state["start_time"])
+                                        mins = elapsed // 60
+                                        secs = elapsed % 60
+                                        st.metric("⏱️ Time Elapsed", f"{mins}m {secs}s")
+                                        
+                                        if elapsed < 300:
+                                            st.info("⏳ Usually takes 5-10 minutes")
+                                        else:
+                                            st.warning("⏳ Complex case - taking longer than usual...")
+                                else:
+                                    st.info("📝 **Generating clinical review notes...**")
+                                    st.caption("This should complete quickly")
                                 
                                 # Check status
                                 try:
@@ -2220,11 +2267,17 @@ def show_doctor_dashboard():
                                                     st.rerun()
                                             
                                             with col2:
-                                                st.info("🔁 Auto-refresh: 15s")
+                                                if llm_available:
+                                                    st.info("🔁 Auto-refresh: 15s")
+                                                else:
+                                                    st.info("🔁 Auto-refresh: 3s")
                                             
-                                            st.success("💡 **Tip:** Close and come back - insights will be here!")
+                                            if llm_available:
+                                                st.success("💡 **Tip:** Close and come back - insights will be here!")
+                                                time.sleep(15)
+                                            else:
+                                                time.sleep(3)
                                             
-                                            time.sleep(15)
                                             st.rerun()
                                         
                                         elif status_data["status"] == "failed":
@@ -2244,11 +2297,14 @@ def show_doctor_dashboard():
                                 except Exception as e:
                                     st.error(f"⚠️ Error: {str(e)}")
 
-                            # ===================================================================
-                            #  DISPLAY RESULTS
-                            # ===================================================================
+                            # ============================================================
+                            # DISPLAY RESULTS
+                            # ============================================================
                             elif current_state["status"] == "completed":
-                                st.success("✅ **Clinical Insights Generated!**")
+                                if llm_available:
+                                    st.success("✅ **AI Clinical Insights Generated!**")
+                                else:
+                                    st.success("✅ **Clinical Review Notes Generated**")
                                 
                                 st.markdown("""
                                 <style>
@@ -2264,23 +2320,25 @@ def show_doctor_dashboard():
                                 """, unsafe_allow_html=True)
                                 
                                 st.markdown('<div class="insights-box">', unsafe_allow_html=True)
-                                st.markdown("#### 🧠 Clinical Analysis")
+                                if llm_available:
+                                    st.markdown("#### 🧠 AI Clinical Analysis")
+                                else:
+                                    st.markdown("#### 📋 Clinical Review Notes")
                                 st.markdown(current_state["insights"])
                                 st.markdown("</div>", unsafe_allow_html=True)
                                 
-                                # ⚠️ Important note about insights
+                                # Note about insights
                                 st.info("💡 **Note:** These insights are for your reference only and are NOT saved to the patient's permanent record or included in the PDF report.")
                                 
                                 st.markdown("---")
                                 
-                                # ✅ FIXED: Only show functional Regenerate button (centered)
+                                # Regenerate button (centered)
                                 col1, col2, col3 = st.columns([1, 1, 1])
                                 
                                 with col1:
                                     pass  # Empty for spacing
                                 
                                 with col2:
-                                    # Only functional button
                                     if st.button(
                                         "🔄 Regenerate Insights",
                                         use_container_width=True,

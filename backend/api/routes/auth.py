@@ -84,54 +84,93 @@ async def register_patient(patient_data: PatientCreate):
         
         print("✅ Token created - User can login now!")
         
-        # 🚀 Generate summary in BACKGROUND thread (non-blocking)
-        import threading
+        # ============================================================
+        # 🔧 FIX: Smart summary generation based on LLM availability
+        # ============================================================
+        if settings.USE_LLM and llm_manager.is_available():
+            # LLM MODE: Generate in background (takes 5-10 minutes)
+            print("🤖 LLM Mode: Starting background summary generation")
+            
+            import threading
+            
+            def generate_summary_background():
+                """Background thread to generate summary"""
+                try:
+                    print(f"🤖 [BACKGROUND] Starting summary generation for {result.inserted_id}")
+                    
+                    patient_dict_for_summary = {
+                        "demographic": patient_data.demographic.dict(),
+                        "per_symptom": per_symptom_dict,
+                        "Gen_questions": patient_data.gen_questions
+                    }
+                    
+                    # This takes 5-7 minutes with LLM
+                    summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
+                    
+                    if summary:
+                        db_manager.patients.update_one(
+                            {"_id": result.inserted_id},
+                            {
+                                "$set": {
+                                    "summary": db_manager.encrypt_data(summary),
+                                    "summary_status": "completed",
+                                    "summary_generated_at": __import__('time').time()
+                                }
+                            }
+                        )
+                        print(f"✅ [BACKGROUND] Summary completed for {result.inserted_id}")
+                    else:
+                        db_manager.patients.update_one(
+                            {"_id": result.inserted_id},
+                            {"$set": {"summary_status": "failed"}}
+                        )
+                        print(f"⚠️ [BACKGROUND] Summary generation failed for {result.inserted_id}")
+                        
+                except Exception as e:
+                    print(f"❌ [BACKGROUND] Error generating summary: {str(e)}")
+                    db_manager.patients.update_one(
+                        {"_id": result.inserted_id},
+                        {"$set": {"summary_status": "failed"}}
+                    )
+            
+            # Start background thread
+            summary_thread = threading.Thread(target=generate_summary_background, daemon=True)
+            summary_thread.start()
+            print("✅ Summary generation started in background thread")
         
-        def generate_summary_background():
-            """Background thread to generate summary"""
+        else:
+            # NON-LLM MODE: Generate template summary immediately (instant)
+            print("📝 Non-LLM Mode: Generating template summary instantly")
+            
             try:
-                print(f"🤖 [BACKGROUND] Starting summary generation for {result.inserted_id}")
-                
                 patient_dict_for_summary = {
                     "demographic": patient_data.demographic.dict(),
                     "per_symptom": per_symptom_dict,
                     "Gen_questions": patient_data.gen_questions
                 }
                 
-                # This takes 5-7 minutes, but user is already logged in!
-                summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
+                # Template summary (instant, no LLM needed)
+                template_summary = llm_manager.summarize_patient_condition(patient_dict_for_summary)
                 
-                if summary:
-                    # Update patient with summary when ready
-                    db_manager.patients.update_one(
-                        {"_id": result.inserted_id},
-                        {
-                            "$set": {
-                                "summary": db_manager.encrypt_data(summary),
-                                "summary_status": "completed",
-                                "summary_generated_at": __import__('time').time()
-                            }
+                # Update immediately (no background thread needed)
+                db_manager.patients.update_one(
+                    {"_id": result.inserted_id},
+                    {
+                        "$set": {
+                            "summary": db_manager.encrypt_data(template_summary),
+                            "summary_status": "completed",
+                            "summary_generated_at": __import__('time').time()
                         }
-                    )
-                    print(f"✅ [BACKGROUND] Summary completed for {result.inserted_id}")
-                else:
-                    db_manager.patients.update_one(
-                        {"_id": result.inserted_id},
-                        {"$set": {"summary_status": "failed"}}
-                    )
-                    print(f"⚠️ [BACKGROUND] Summary generation failed for {result.inserted_id}")
-                    
+                    }
+                )
+                print(f"✅ Template summary created instantly for {result.inserted_id}")
+            
             except Exception as e:
-                print(f"❌ [BACKGROUND] Error generating summary: {str(e)}")
+                print(f"❌ Template summary generation error: {str(e)}")
                 db_manager.patients.update_one(
                     {"_id": result.inserted_id},
                     {"$set": {"summary_status": "failed"}}
                 )
-        
-        # Start background thread (daemon=True means it won't block shutdown)
-        summary_thread = threading.Thread(target=generate_summary_background, daemon=True)
-        summary_thread.start()
-        print("✅ Summary generation started in background thread")
         
         # Return immediately - user gets logged in!
         return Token(
