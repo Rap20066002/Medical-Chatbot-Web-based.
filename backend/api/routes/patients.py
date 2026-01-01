@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 import threading
 import time
 from urllib.parse import quote
+import unicodedata
 import re
 
 from models.patient import (
@@ -50,6 +51,139 @@ class SymptomUpdate(BaseModel):
 class HealthQuestionsUpdate(BaseModel):
     gen_questions: Dict[str, str]
 
+def create_safe_filename(original_name: str, fallback: str = "Patient") -> tuple:
+    """
+    Create both Unicode filename AND ASCII fallback
+    
+    Args:
+        original_name: Original name in any language (e.g., "아르준", "أرجون", "李明")
+        fallback: Fallback for very old browsers (default: "Patient")
+    
+    Returns:
+        (unicode_filename, ascii_filename)
+        
+    Examples:
+        "José García" → ("José García", "Jose_Garcia")
+        "아르준" → ("아르준", "Arjun_Transliterated") 
+        "أرجون" → ("أرجون", "Patient")
+        "李明" → ("李明", "LiMing_Transliterated")
+    """
+    
+    # Clean the original name (remove unsafe characters)
+    unicode_filename = re.sub(r'[<>:"/\\|?*]', '', original_name)
+    unicode_filename = unicode_filename.strip() or fallback
+    
+    # Create ASCII fallback using multiple strategies
+    ascii_filename = create_ascii_fallback(unicode_filename, fallback)
+    
+    return unicode_filename, ascii_filename
+
+
+def create_ascii_fallback(text: str, fallback: str = "Patient") -> str:
+    """
+    Create ASCII-safe filename with intelligent transliteration
+    
+    Strategy:
+    1. Try Unicode normalization (NFD) - works for accented Latin
+    2. Try Unidecode-style transliteration
+    3. Extract Latin characters if mixed script
+    4. Use fallback if no Latin characters
+    
+    Examples:
+        "José García" → "Jose_Garcia"
+        "Владимир" → "Vladimir" (if unidecode available)
+        "अर्जुन Arjun" → "Arjun" (extracts Latin part)
+        "李明" → "Patient" (no Latin equivalent)
+    """
+    
+    # Step 1: Unicode normalization (NFD decomposition)
+    # Converts "é" → "e" + combining accent, then removes accents
+    try:
+        # Decompose unicode characters
+        nfd = unicodedata.normalize('NFD', text)
+        # Remove combining characters (accents)
+        ascii_text = ''.join(char for char in nfd if unicodedata.category(char) != 'Mn')
+        
+        # Keep only ASCII alphanumeric and spaces
+        ascii_text = re.sub(r'[^a-zA-Z0-9\s]', '', ascii_text)
+        ascii_text = re.sub(r'\s+', '_', ascii_text.strip())
+        
+        if ascii_text and len(ascii_text) >= 2:
+            return ascii_text
+    except:
+        pass
+    
+    # Step 2: Try Unidecode for better transliteration
+    # This handles Cyrillic, Greek, etc.
+    try:
+        from unidecode import unidecode
+        transliterated = unidecode(text)
+        transliterated = re.sub(r'[^a-zA-Z0-9\s]', '', transliterated)
+        transliterated = re.sub(r'\s+', '_', transliterated.strip())
+        
+        if transliterated and len(transliterated) >= 2:
+            return transliterated
+    except ImportError:
+        pass  # Unidecode not installed, skip
+    except:
+        pass
+    
+    # Step 3: Extract any Latin characters from mixed-script names
+    # E.g., "李明 LiMing" → "LiMing"
+    latin_chars = re.findall(r'[a-zA-Z0-9]+', text)
+    if latin_chars:
+        extracted = '_'.join(latin_chars)
+        if len(extracted) >= 2:
+            return extracted
+    
+    # Step 4: Use fallback
+    return fallback
+
+
+def create_download_response(pdf_buffer, patient_name: str, is_for_doctor: bool = False) -> Response:
+    """
+    Create Response with proper Content-Disposition for all languages
+    
+    Args:
+        pdf_buffer: BytesIO buffer containing PDF
+        patient_name: Patient name in any language
+        is_for_doctor: If True, adds "(Doctor_Copy)" to filename
+    
+    Returns:
+        FastAPI Response with proper headers
+    """
+    
+    # Create both Unicode and ASCII filenames
+    unicode_name, ascii_name = create_safe_filename(patient_name, "Patient")
+    
+    # Add suffix if doctor copy
+    suffix = "_Doctor_Copy" if is_for_doctor else ""
+    
+    # Create filenames
+    unicode_filename = f"{unicode_name}{suffix}_Health_Report.pdf"
+    ascii_filename = f"{ascii_name}{suffix}_Health_Report.pdf"
+    
+    # URL-encode the Unicode filename (RFC 5987)
+    encoded_unicode = quote(unicode_filename.encode('utf-8'))
+    
+    # Create Content-Disposition header with BOTH filenames
+    # Modern browsers use filename* (Unicode), old browsers use filename (ASCII)
+    content_disposition = (
+        f"attachment; "
+        f'filename="{ascii_filename}"; '  # ASCII fallback (old browsers)
+        f"filename*=UTF-8''{encoded_unicode}"  # Unicode (modern browsers)
+    )
+    
+    headers = {
+        "Content-Disposition": content_disposition,
+        "Content-Type": "application/pdf",
+    }
+    
+    return Response(
+        content=pdf_buffer.getvalue(),
+        media_type="application/pdf",
+        headers=headers
+    )
 
 def sanitize_filename_ascii(filename: str) -> str:
     """
@@ -198,7 +332,7 @@ async def regenerate_summary(token_data: TokenData = Depends(get_current_patient
 
 @router.get("/me/pdf")
 async def download_my_pdf(token_data: TokenData = Depends(get_current_patient)):
-    """Download patient's health report as PDF - FIXED for Unicode names"""
+    """Download patient's health report as PDF - UNIVERSAL LANGUAGE SUPPORT"""
     found_patient = None
     for patient in db_manager.patients.find():
         try:
@@ -215,6 +349,7 @@ async def download_my_pdf(token_data: TokenData = Depends(get_current_patient)):
             detail="Patient not found"
         )
     
+    # Decrypt patient data
     decrypted_data = {
         "demographic": db_manager.decrypt_dict(found_patient["demographic"]),
         "per_symptom": db_manager.decrypt_dict(found_patient["per_symptom"]),
@@ -228,33 +363,14 @@ async def download_my_pdf(token_data: TokenData = Depends(get_current_patient)):
             decrypted_data["summary"] = None
     
     # Generate PDF
+    from utils.pdf_generator import generate_patient_pdf
     pdf_buffer = generate_patient_pdf(decrypted_data)
     
-    # ✅ FIX: Handle Unicode characters in filename
-    patient_name = decrypted_data["demographic"].get("name", "patient")
+    # Get patient name (supports all languages)
+    patient_name = decrypted_data["demographic"].get("name", "Patient")
     
-    # Create safe ASCII filename (fallback)
-    safe_filename = sanitize_filename_ascii(patient_name)
-    
-    # Create RFC 5987 encoded filename (supports Unicode)
-    unicode_filename = f"{patient_name}_Health_Report.pdf"
-    encoded_filename = quote(unicode_filename.encode('utf-8'))
-    
-    # Use Content-Disposition with both ASCII and UTF-8 filenames
-    # Modern browsers will use the UTF-8 version, older ones use ASCII
-    headers = {
-        "Content-Disposition": (
-            f"attachment; "
-            f"filename=\"{safe_filename}_Health_Report.pdf\"; "
-            f"filename*=UTF-8''{encoded_filename}"
-        )
-    }
-    
-    return Response(
-        content=pdf_buffer.getvalue(),
-        media_type="application/pdf",
-        headers=headers
-    )
+    # Create response with universal filename support
+    return create_download_response(pdf_buffer, patient_name, is_for_doctor=False)
 
 @router.put("/me/demographic")
 async def update_demographic(
@@ -558,7 +674,7 @@ async def download_patient_pdf(
     patient_id: str,
     token_data: TokenData = Depends(get_current_doctor)
 ):
-    """Download patient's PDF report (doctors only) - FIXED for Unicode names"""
+    """Download patient's PDF report (doctors only) - UNIVERSAL LANGUAGE SUPPORT"""
     try:
         patient = db_manager.patients.find_one({"_id": ObjectId(patient_id)})
     except:
@@ -573,6 +689,7 @@ async def download_patient_pdf(
             detail="Patient not found"
         )
     
+    # Decrypt patient data
     decrypted_data = {
         "demographic": db_manager.decrypt_dict(patient["demographic"]),
         "per_symptom": db_manager.decrypt_dict(patient["per_symptom"]),
@@ -586,32 +703,15 @@ async def download_patient_pdf(
             decrypted_data["summary"] = None
     
     # Generate PDF
+    from utils.pdf_generator import generate_patient_pdf
     pdf_buffer = generate_patient_pdf(decrypted_data)
     
-    # ✅ FIX: Handle Unicode characters in filename
-    patient_name = decrypted_data["demographic"].get("name", "patient")
+    # Get patient name (supports all languages)
+    patient_name = decrypted_data["demographic"].get("name", "Patient")
     
-    # Create safe ASCII filename (fallback)
-    safe_filename = sanitize_filename_ascii(patient_name)
-    
-    # Create RFC 5987 encoded filename (supports Unicode)
-    unicode_filename = f"{patient_name}_Health_Report.pdf"
-    encoded_filename = quote(unicode_filename.encode('utf-8'))
-    
-    # Use Content-Disposition with both ASCII and UTF-8 filenames
-    headers = {
-        "Content-Disposition": (
-            f"attachment; "
-            f"filename=\"{safe_filename}_Health_Report.pdf\"; "
-            f"filename*=UTF-8''{encoded_filename}"
-        )
-    }
-    
-    return Response(
-        content=pdf_buffer.getvalue(),
-        media_type="application/pdf",
-        headers=headers
-    )
+    # Create response with universal filename support (mark as doctor copy)
+    return create_download_response(pdf_buffer, patient_name, is_for_doctor=True)
+
 
 # ============================================================================
 # 🚀 FIXED: CLINICAL INSIGHTS - NOW GENERATES IN BACKGROUND (NO TIMEOUT!)

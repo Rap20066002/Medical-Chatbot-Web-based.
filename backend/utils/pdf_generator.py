@@ -1,6 +1,7 @@
 """
-FIXED PDF Generator - Multilingual Support (Arabic, Hindi, Chinese, etc.)
-Replace backend/utils/pdf_generator.py with this version
+ULTIMATE MULTILINGUAL PDF GENERATOR - FIXED VERSION
+✅ Working download URLs for all fonts
+✅ Supports: Arabic, Hindi, Korean, Chinese, Japanese, Thai, Hebrew, Russian, Greek
 """
 
 from io import BytesIO
@@ -14,263 +15,401 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from datetime import datetime
 import os
-import sys
+import urllib.request
+import tempfile
+
+
+def download_noto_fonts():
+    """
+    Download Google Noto Sans fonts - FIXED WORKING URLS
+    These fonts are free and open source from Google Fonts
+    """
+    fonts_dir = os.path.join(tempfile.gettempdir(), "noto_fonts")
+    os.makedirs(fonts_dir, exist_ok=True)
+    
+    # ✅ FIXED: Working URLs from Google Fonts API and GitHub releases
+    font_urls = {
+        # Base Latin font (English, Spanish, French, German, etc.)
+        'NotoSans-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
+        
+        # Hindi (Devanagari script)
+        'NotoSansDevanagari-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf',
+        
+        # Arabic
+        'NotoSansArabic-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansarabic/NotoSansArabic%5Bwdth%2Cwght%5D.ttf',
+        
+        # ✅ FIXED: Korean (Hangul) - Correct URL
+        'NotoSansKR-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf',
+        
+        # Chinese Simplified
+        'NotoSansSC-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+        
+        # Japanese
+        'NotoSansJP-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+        
+        # Thai
+        'NotoSansThai-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai%5Bwdth%2Cwght%5D.ttf',
+        
+        # Hebrew
+        'NotoSansHebrew-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosanshebrew/NotoSansHebrew%5Bwdth%2Cwght%5D.ttf',
+    }
+    
+    downloaded_fonts = {}
+    
+    for font_name, url in font_urls.items():
+        font_path = os.path.join(fonts_dir, font_name)
+        
+        # Skip if already downloaded
+        if os.path.exists(font_path) and os.path.getsize(font_path) > 0:
+            print(f"✅ {font_name} already exists")
+            downloaded_fonts[font_name] = font_path
+            continue
+        
+        # Download font
+        try:
+            print(f"📥 Downloading {font_name}...")
+            
+            # Add user agent to avoid 403 errors
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            
+            with urllib.request.urlopen(req, timeout=30) as response:
+                font_data = response.read()
+                
+                # Verify we got actual font data
+                if len(font_data) < 1000:
+                    print(f"⚠️  {font_name} download too small, skipping")
+                    continue
+                
+                # Write to file
+                with open(font_path, 'wb') as f:
+                    f.write(font_data)
+                
+                print(f"✅ Downloaded {font_name} ({len(font_data) // 1024} KB)")
+                downloaded_fonts[font_name] = font_path
+        
+        except urllib.error.HTTPError as e:
+            print(f"⚠️  HTTP Error downloading {font_name}: {e.code} {e.reason}")
+            print(f"   URL: {url}")
+        except urllib.error.URLError as e:
+            print(f"⚠️  Network error downloading {font_name}: {e.reason}")
+        except Exception as e:
+            print(f"⚠️  Failed to download {font_name}: {e}")
+    
+    if downloaded_fonts:
+        print(f"\n✅ Successfully downloaded {len(downloaded_fonts)} fonts")
+    else:
+        print("\n⚠️  No fonts downloaded - will use system fonts")
+    
+    return downloaded_fonts
 
 
 def setup_multilingual_fonts():
     """
-    Setup fonts supporting multiple languages including Arabic, Hindi, Chinese, etc.
-    Returns: (success: bool, font_name: str, font_name_bold: str)
+    Setup fonts with COMPREHENSIVE language support
+    Priority: Download Noto fonts > System fonts > Fallback
     """
     
-    # === COMPREHENSIVE FONT PATHS ===
-    # Organized by priority: Best Arabic support first
-    
-    font_candidates = [
-        # === ARABIC-OPTIMIZED FONTS (HIGHEST PRIORITY) ===
-        {
-            'name': 'DejaVuSans',
-            'regular': [
-                # Linux
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-                # Windows (if DejaVu is installed)
-                'C:\\Windows\\Fonts\\DejaVuSans.ttf',
-                # Mac
-                '/Library/Fonts/DejaVuSans.ttf',
-                '/System/Library/Fonts/Supplemental/DejaVuSans.ttf',
-            ],
-            'bold': [
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-                '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
-                'C:\\Windows\\Fonts\\DejaVuSans-Bold.ttf',
-                '/Library/Fonts/DejaVuSans-Bold.ttf',
-            ]
-        },
+    # STEP 1: Try to download Noto fonts (best option)
+    try:
+        noto_fonts = download_noto_fonts()
         
-        # === WINDOWS SYSTEM FONTS ===
+        if noto_fonts:
+            registered_count = 0
+            
+            # Register base Latin font
+            if 'NotoSans-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang', noto_fonts['NotoSans-Regular.ttf']))
+                    pdfmetrics.registerFont(TTFont('MultiLang-Bold', noto_fonts['NotoSans-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Base Latin font")
+                except Exception as e:
+                    print(f"⚠️  Failed to register base font: {e}")
+            
+            # Register Hindi (Devanagari)
+            if 'NotoSansDevanagari-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Hindi', noto_fonts['NotoSansDevanagari-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Hindi (Devanagari)")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Hindi font: {e}")
+            
+            # Register Arabic
+            if 'NotoSansArabic-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Arabic', noto_fonts['NotoSansArabic-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Arabic")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Arabic font: {e}")
+            
+            # ✅ Register Korean
+            if 'NotoSansKR-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Korean', noto_fonts['NotoSansKR-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Korean")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Korean font: {e}")
+            
+            # Register Chinese
+            if 'NotoSansSC-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Chinese', noto_fonts['NotoSansSC-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Chinese (Simplified)")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Chinese font: {e}")
+            
+            # Register Japanese
+            if 'NotoSansJP-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Japanese', noto_fonts['NotoSansJP-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Japanese")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Japanese font: {e}")
+            
+            # Register Thai
+            if 'NotoSansThai-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Thai', noto_fonts['NotoSansThai-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Thai")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Thai font: {e}")
+            
+            # Register Hebrew
+            if 'NotoSansHebrew-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Hebrew', noto_fonts['NotoSansHebrew-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Hebrew")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Hebrew font: {e}")
+            
+            if registered_count > 0:
+                print(f"\n✅ Successfully registered {registered_count} fonts!")
+                return True, 'MultiLang', 'MultiLang-Bold'
+    
+    except Exception as e:
+        print(f"⚠️  Font download/registration failed: {e}")
+    
+    # STEP 2: Try system fonts (fallback)
+    print("\n🔄 Trying system fonts...")
+    
+    system_fonts = [
+        # Windows - Best coverage
         {
-            'name': 'Arial Unicode',
+            'name': 'Arial Unicode MS',
             'regular': [
                 'C:\\Windows\\Fonts\\ARIALUNI.TTF',
                 'C:\\Windows\\Fonts\\arialuni.ttf',
-            ],
-            'bold': [
-                'C:\\Windows\\Fonts\\ARIALUNI.TTF',  # Same as regular
             ]
         },
         {
-            'name': 'Tahoma',
+            'name': 'Malgun Gothic',  # Korean support on Windows
             'regular': [
-                'C:\\Windows\\Fonts\\tahoma.ttf',
-                'C:\\Windows\\Fonts\\Tahoma.ttf',
-            ],
-            'bold': [
-                'C:\\Windows\\Fonts\\tahomabd.ttf',
-                'C:\\Windows\\Fonts\\Tahomabd.ttf',
+                'C:\\Windows\\Fonts\\malgun.ttf',
+                'C:\\Windows\\Fonts\\Malgun.ttf',
             ]
         },
-        {
-            'name': 'Segoe UI',
-            'regular': [
-                'C:\\Windows\\Fonts\\segoeui.ttf',
-                'C:\\Windows\\Fonts\\SegoeUI.ttf',
-            ],
-            'bold': [
-                'C:\\Windows\\Fonts\\segoeuib.ttf',
-                'C:\\Windows\\Fonts\\SegoeUIBold.ttf',
-            ]
-        },
-        
-        # === LINUX SYSTEM FONTS ===
+        # Linux
         {
             'name': 'Noto Sans',
             'regular': [
                 '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
                 '/usr/share/fonts/noto/NotoSans-Regular.ttf',
-                '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
-            ],
-            'bold': [
-                '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
-                '/usr/share/fonts/noto/NotoSans-Bold.ttf',
-                '/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf',
             ]
         },
         {
-            'name': 'FreeSans',
+            'name': 'DejaVu Sans',
             'regular': [
-                '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-                '/usr/share/fonts/gnu-free/FreeSans.ttf',
-            ],
-            'bold': [
-                '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
-                '/usr/share/fonts/gnu-free/FreeSansBold.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/dejavu/DejaVuSans.ttf',
             ]
         },
-        
-        # === MAC SYSTEM FONTS ===
+        # Mac
         {
-            'name': 'Arial Unicode',
+            'name': 'Arial Unicode MS',
             'regular': [
-                '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
                 '/Library/Fonts/Arial Unicode.ttf',
-            ],
-            'bold': [
                 '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
-            ]
-        },
-        {
-            'name': 'Helvetica Neue',
-            'regular': [
-                '/System/Library/Fonts/HelveticaNeue.ttc',
-            ],
-            'bold': [
-                '/System/Library/Fonts/HelveticaNeue.ttc',
             ]
         },
     ]
     
-    # Try each font candidate
-    for font_info in font_candidates:
-        try:
-            regular_font = None
-            bold_font = None
-            
-            # Find regular font
-            for path in font_info['regular']:
-                if os.path.exists(path):
-                    regular_font = path
-                    break
-            
-            # Find bold font
-            for path in font_info['bold']:
-                if os.path.exists(path):
-                    bold_font = path
-                    break
-            
-            if regular_font:
+    for font_info in system_fonts:
+        for path in font_info['regular']:
+            if os.path.exists(path):
                 try:
-                    # Register fonts
-                    pdfmetrics.registerFont(TTFont('MultiLang', regular_font))
-                    
-                    if bold_font:
-                        pdfmetrics.registerFont(TTFont('MultiLang-Bold', bold_font))
-                    else:
-                        # Use regular font for bold if bold variant not found
-                        pdfmetrics.registerFont(TTFont('MultiLang-Bold', regular_font))
-                    
-                    print(f"✅ Successfully loaded font: {font_info['name']}")
-                    print(f"   Regular: {regular_font}")
-                    print(f"   Bold: {bold_font or regular_font}")
-                    
+                    pdfmetrics.registerFont(TTFont('MultiLang', path))
+                    pdfmetrics.registerFont(TTFont('MultiLang-Bold', path))
+                    print(f"✅ Using system font: {font_info['name']}")
                     return True, 'MultiLang', 'MultiLang-Bold'
-                
                 except Exception as e:
-                    print(f"⚠️  Failed to register {font_info['name']}: {e}")
                     continue
-        
-        except Exception as e:
-            continue
     
-    print("⚠️  No suitable multilingual font found. Using default Helvetica.")
-    print("   Arabic and other complex scripts may not display correctly.")
+    # STEP 3: Fallback to Helvetica
+    print("⚠️  Using Helvetica (limited Unicode support)")
+    print("   Some languages may show as boxes")
     return False, 'Helvetica', 'Helvetica-Bold'
 
 
-def is_rtl_text(text):
+def detect_script(text):
     """
-    Detect if text contains Right-to-Left languages (Arabic, Hebrew, etc.)
+    Detect which script the text belongs to
+    Returns: 'arabic', 'hindi', 'korean', 'chinese', 'japanese', 'thai', 'hebrew', 'latin'
     """
     if not text:
-        return False
+        return 'latin'
     
-    # Unicode ranges for RTL scripts
-    rtl_ranges = [
-        (0x0600, 0x06FF),  # Arabic
-        (0x0750, 0x077F),  # Arabic Supplement
-        (0x08A0, 0x08FF),  # Arabic Extended-A
-        (0xFB50, 0xFDFF),  # Arabic Presentation Forms-A
-        (0xFE70, 0xFEFF),  # Arabic Presentation Forms-B
-        (0x0590, 0x05FF),  # Hebrew
-        (0xFB1D, 0xFB4F),  # Hebrew Presentation Forms
-    ]
+    # Count characters by script
+    script_counts = {
+        'arabic': 0, 'hindi': 0, 'korean': 0, 'chinese': 0,
+        'japanese': 0, 'thai': 0, 'hebrew': 0, 'latin': 0
+    }
     
-    # Check if any character is in RTL range
     for char in str(text):
         code = ord(char)
-        for start, end in rtl_ranges:
-            if start <= code <= end:
-                return True
+        
+        # Arabic
+        if 0x0600 <= code <= 0x06FF or 0xFB50 <= code <= 0xFDFF or 0xFE70 <= code <= 0xFEFF:
+            script_counts['arabic'] += 1
+        
+        # Devanagari (Hindi, Marathi, Sanskrit)
+        elif 0x0900 <= code <= 0x097F:
+            script_counts['hindi'] += 1
+        
+        # Korean (Hangul)
+        elif 0xAC00 <= code <= 0xD7AF or 0x1100 <= code <= 0x11FF:
+            script_counts['korean'] += 1
+        
+        # Chinese (CJK Unified Ideographs)
+        elif 0x4E00 <= code <= 0x9FFF or 0x3400 <= code <= 0x4DBF:
+            script_counts['chinese'] += 1
+        
+        # Japanese (Hiragana, Katakana)
+        elif 0x3040 <= code <= 0x309F or 0x30A0 <= code <= 0x30FF:
+            script_counts['japanese'] += 1
+        
+        # Thai
+        elif 0x0E00 <= code <= 0x0E7F:
+            script_counts['thai'] += 1
+        
+        # Hebrew
+        elif 0x0590 <= code <= 0x05FF:
+            script_counts['hebrew'] += 1
+        
+        # Latin (English, Spanish, etc.)
+        elif (0x0041 <= code <= 0x005A) or (0x0061 <= code <= 0x007A):
+            script_counts['latin'] += 1
     
-    return False
+    # Return script with highest count
+    max_script = max(script_counts, key=script_counts.get)
+    
+    # If all counts are 0, default to latin
+    if script_counts[max_script] == 0:
+        return 'latin'
+    
+    return max_script
+
+
+def is_rtl_text(text):
+    """Check if text is Right-to-Left (Arabic, Hebrew)"""
+    script = detect_script(text)
+    return script in ['arabic', 'hebrew']
+
+
+def get_font_for_text(text, is_bold=False):
+    """
+    Dynamically select the best font for the text
+    """
+    script = detect_script(text)
+    
+    # Map scripts to fonts
+    font_map = {
+        'arabic': 'MultiLang-Arabic',
+        'hindi': 'MultiLang-Hindi',
+        'korean': 'MultiLang-Korean',
+        'chinese': 'MultiLang-Chinese',
+        'japanese': 'MultiLang-Japanese',
+        'thai': 'MultiLang-Thai',
+        'hebrew': 'MultiLang-Hebrew',
+        'latin': 'MultiLang-Bold' if is_bold else 'MultiLang',
+    }
+    
+    selected_font = font_map.get(script, 'MultiLang')
+    
+    # Check if font is registered, fallback if not
+    try:
+        pdfmetrics.getFont(selected_font)
+        return selected_font
+    except:
+        # Try base MultiLang font
+        try:
+            pdfmetrics.getFont('MultiLang')
+            return 'MultiLang-Bold' if is_bold else 'MultiLang'
+        except:
+            # Ultimate fallback
+            return 'Helvetica-Bold' if is_bold else 'Helvetica'
 
 
 def reshape_arabic_text(text):
-    """
-    Reshape Arabic text for proper display in PDF
-    Handles character joining and bidirectional text
-    """
+    """Reshape Arabic text for proper display"""
     if not text:
         return text
     
     try:
-        # Only process if text contains RTL characters
         if not is_rtl_text(text):
             return text
         
-        # Import libraries (only if needed)
-        try:
-            import arabic_reshaper
-            from bidi.algorithm import get_display
-        except ImportError:
-            print("⚠️  WARNING: arabic-reshaper and python-bidi not installed!")
-            print("   Install with: pip install arabic-reshaper python-bidi")
-            return text
+        import arabic_reshaper
+        from bidi.algorithm import get_display
         
-        # Step 1: Reshape Arabic characters (handles ligatures and connections)
-        reshaped_text = arabic_reshaper.reshape(str(text))
-        
-        # Step 2: Apply bidirectional algorithm (handles RTL ordering)
-        bidi_text = get_display(reshaped_text)
-        
+        reshaped = arabic_reshaper.reshape(str(text))
+        bidi_text = get_display(reshaped)
         return bidi_text
     
+    except ImportError:
+        print("⚠️  arabic-reshaper/python-bidi not installed")
+        return text
     except Exception as e:
-        print(f"⚠️  Error reshaping Arabic text: {e}")
+        print(f"⚠️  Arabic reshaping error: {e}")
         return text
 
 
 def create_multilingual_paragraph(text, style, is_bold=False, has_font=True):
     """
-    Create a paragraph with proper multilingual support
-    Handles Arabic, Hebrew, and other complex scripts
+    Create paragraph with AUTOMATIC font selection
     """
     if not text:
         return Paragraph("", style)
     
-    # Process Arabic/Hebrew text
+    # Process RTL text
     processed_text = reshape_arabic_text(str(text))
     
-    # Determine text alignment
+    # Detect script and select font
+    font_name = get_font_for_text(text, is_bold)
     alignment = TA_RIGHT if is_rtl_text(text) else TA_LEFT
     
     if has_font:
-        # Use custom multilingual font
-        font_name = 'MultiLang-Bold' if is_bold else 'MultiLang'
-        
         custom_style = ParagraphStyle(
             name='CustomMultilang',
             parent=style,
             fontName=font_name,
             fontSize=getattr(style, 'fontSize', 10),
-            wordWrap='CJK',  # Support for CJK (Chinese, Japanese, Korean)
+            wordWrap='CJK',
             alignment=alignment,
             leading=getattr(style, 'leading', 12),
         )
         
         return Paragraph(processed_text, custom_style)
     else:
-        # Fallback to default font with alignment
         fallback_style = ParagraphStyle(
             name='Fallback',
             parent=style,
@@ -281,17 +420,7 @@ def create_multilingual_paragraph(text, style, is_bold=False, has_font=True):
 
 def generate_patient_pdf(patient_data):
     """
-    Generate a comprehensive PDF report from patient data
-    
-    Args:
-        patient_data: Dictionary containing:
-            - demographic: {name, age, gender, email, phone}
-            - per_symptom: {symptom_name: {Duration, Severity, Frequency, Factors, Additional Notes}}
-            - Gen_questions: {question: answer}
-            - summary: Optional clinical summary
-    
-    Returns:
-        BytesIO buffer containing the PDF
+    Generate PDF with AUTOMATIC multilingual support
     """
     
     # Create PDF buffer
@@ -305,10 +434,10 @@ def generate_patient_pdf(patient_data):
         bottomMargin=30,
     )
     
-    # Setup fonts and check availability
+    # Setup fonts
     has_font, font_regular, font_bold = setup_multilingual_fonts()
     
-    # Get default styles
+    # Get styles
     styles = getSampleStyleSheet()
     
     # Create custom styles
@@ -349,33 +478,43 @@ def generate_patient_pdf(patient_data):
     story = []
     
     # === TITLE ===
-    title_text = "PATIENT HEALTH ASSESSMENT REPORT"
-    title = create_multilingual_paragraph(title_text, header_style, is_bold=True, has_font=has_font)
+    title = create_multilingual_paragraph(
+        "PATIENT HEALTH ASSESSMENT REPORT",
+        header_style,
+        is_bold=True,
+        has_font=has_font
+    )
     story.append(title)
     story.append(Spacer(1, 0.2 * inch))
     
-    # === GENERATION DATE ===
+    # === DATE ===
     date_str = datetime.now().strftime('%B %d, %Y at %I:%M %p')
-    date_text = f"<i>Generated on: {date_str}</i>"
-    date_para = create_multilingual_paragraph(date_text, normal_style, has_font=has_font)
+    date_para = create_multilingual_paragraph(
+        f"<i>Generated on: {date_str}</i>",
+        normal_style,
+        has_font=has_font
+    )
     story.append(date_para)
     story.append(Spacer(1, 0.3 * inch))
     
     # === PATIENT INFORMATION ===
-    story.append(create_multilingual_paragraph("Patient Information", subheader_style, is_bold=True, has_font=has_font))
+    story.append(create_multilingual_paragraph(
+        "Patient Information",
+        subheader_style,
+        is_bold=True,
+        has_font=has_font
+    ))
     
-    demo_data = [
-        [
-            create_multilingual_paragraph("<b>Field</b>", normal_style, is_bold=True, has_font=has_font),
-            create_multilingual_paragraph("<b>Information</b>", normal_style, is_bold=True, has_font=has_font)
-        ]
-    ]
+    demo_data = [[
+        create_multilingual_paragraph("<b>Field</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Information</b>", normal_style, True, has_font)
+    ]]
     
     for field, value in patient_data.get("demographic", {}).items():
         if field.lower() not in ["password", "pwd"]:
             demo_data.append([
-                create_multilingual_paragraph(f"<b>{field.capitalize()}</b>", normal_style, is_bold=True, has_font=has_font),
-                create_multilingual_paragraph(str(value), normal_style, has_font=has_font)
+                create_multilingual_paragraph(f"<b>{field.capitalize()}</b>", normal_style, True, has_font),
+                create_multilingual_paragraph(str(value), normal_style, False, has_font)
             ])
     
     demo_table = Table(demo_data, colWidths=[200, 400])
@@ -397,31 +536,44 @@ def generate_patient_pdf(patient_data):
     
     # === CLINICAL SUMMARY ===
     if "summary" in patient_data and patient_data["summary"]:
-        story.append(create_multilingual_paragraph("Clinical Summary", subheader_style, is_bold=True, has_font=has_font))
+        story.append(create_multilingual_paragraph(
+            "Clinical Summary",
+            subheader_style,
+            is_bold=True,
+            has_font=has_font
+        ))
         
-        summary_text = str(patient_data["summary"])
-        summary_para = create_multilingual_paragraph(summary_text, normal_style, has_font=has_font)
+        summary_para = create_multilingual_paragraph(
+            str(patient_data["summary"]),
+            normal_style,
+            has_font=has_font
+        )
         story.append(summary_para)
         story.append(Spacer(1, 0.3 * inch))
     
-    # === REPORTED SYMPTOMS ===
-    story.append(create_multilingual_paragraph("Reported Symptoms", subheader_style, is_bold=True, has_font=has_font))
+    # === SYMPTOMS ===
+    story.append(create_multilingual_paragraph(
+        "Reported Symptoms",
+        subheader_style,
+        is_bold=True,
+        has_font=has_font
+    ))
     
     symptoms_data = [[
-        create_multilingual_paragraph("<b>Symptom</b>", normal_style, is_bold=True, has_font=has_font),
-        create_multilingual_paragraph("<b>Duration</b>", normal_style, is_bold=True, has_font=has_font),
-        create_multilingual_paragraph("<b>Severity</b>", normal_style, is_bold=True, has_font=has_font),
-        create_multilingual_paragraph("<b>Frequency</b>", normal_style, is_bold=True, has_font=has_font),
-        create_multilingual_paragraph("<b>Additional Notes</b>", normal_style, is_bold=True, has_font=has_font)
+        create_multilingual_paragraph("<b>Symptom</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Duration</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Severity</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Frequency</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Additional Notes</b>", normal_style, True, has_font)
     ]]
     
     for symptom, details in patient_data.get("per_symptom", {}).items():
         row = [
-            create_multilingual_paragraph(f"<b>{symptom.upper()}</b>", normal_style, is_bold=True, has_font=has_font),
-            create_multilingual_paragraph(str(details.get("Duration", "N/A")), normal_style, has_font=has_font),
-            create_multilingual_paragraph(str(details.get("Severity", "N/A")), normal_style, has_font=has_font),
-            create_multilingual_paragraph(str(details.get("Frequency", "N/A")), normal_style, has_font=has_font),
-            create_multilingual_paragraph(str(details.get("Additional Notes", "N/A")), normal_style, has_font=has_font)
+            create_multilingual_paragraph(f"<b>{symptom.upper()}</b>", normal_style, True, has_font),
+            create_multilingual_paragraph(str(details.get("Duration", "N/A")), normal_style, False, has_font),
+            create_multilingual_paragraph(str(details.get("Severity", "N/A")), normal_style, False, has_font),
+            create_multilingual_paragraph(str(details.get("Frequency", "N/A")), normal_style, False, has_font),
+            create_multilingual_paragraph(str(details.get("Additional Notes", "N/A")), normal_style, False, has_font)
         ]
         symptoms_data.append(row)
     
@@ -442,18 +594,23 @@ def generate_patient_pdf(patient_data):
     story.append(symptoms_table)
     story.append(Spacer(1, 0.3 * inch))
     
-    # === GENERAL HEALTH INFORMATION ===
-    story.append(create_multilingual_paragraph("General Health Information", subheader_style, is_bold=True, has_font=has_font))
+    # === HEALTH INFORMATION ===
+    story.append(create_multilingual_paragraph(
+        "General Health Information",
+        subheader_style,
+        is_bold=True,
+        has_font=has_font
+    ))
     
     health_data = [[
-        create_multilingual_paragraph("<b>Question</b>", normal_style, is_bold=True, has_font=has_font),
-        create_multilingual_paragraph("<b>Answer</b>", normal_style, is_bold=True, has_font=has_font)
+        create_multilingual_paragraph("<b>Question</b>", normal_style, True, has_font),
+        create_multilingual_paragraph("<b>Answer</b>", normal_style, True, has_font)
     ]]
     
     for question, answer in patient_data.get("Gen_questions", {}).items():
         health_data.append([
-            create_multilingual_paragraph(f"<b>{question}</b>", normal_style, is_bold=True, has_font=has_font),
-            create_multilingual_paragraph(str(answer), normal_style, has_font=has_font)
+            create_multilingual_paragraph(f"<b>{question}</b>", normal_style, True, has_font),
+            create_multilingual_paragraph(str(answer), normal_style, False, has_font)
         ])
     
     health_table = Table(health_data, colWidths=[350, 350])
@@ -474,30 +631,31 @@ def generate_patient_pdf(patient_data):
     story.append(Spacer(1, 0.3 * inch))
     
     # === DISCLAIMER ===
-    disclaimer_text = ("<i><b>Disclaimer:</b> This report is for informational purposes only and does not "
-                      "constitute medical advice. Please consult with a qualified healthcare professional "
-                      "for proper diagnosis and treatment.</i>")
+    disclaimer_text = (
+        "<i><b>Disclaimer:</b> This report is for informational purposes only and does not "
+        "constitute medical advice. Please consult with a qualified healthcare professional "
+        "for proper diagnosis and treatment.</i>"
+    )
     disclaimer = create_multilingual_paragraph(disclaimer_text, normal_style, has_font=has_font)
     story.append(disclaimer)
     
     # === BUILD PDF ===
     try:
         doc.build(story)
-        print("✅ PDF generated successfully")
+        print("✅ PDF generated successfully with multilingual support!")
     except Exception as e:
         print(f"❌ PDF generation error: {e}")
+        import traceback
+        traceback.print_exc()
         
-        # Fallback: Create simple error PDF
+        # Create error PDF
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         story = [
             Paragraph("PATIENT HEALTH ASSESSMENT REPORT", styles['Heading1']),
-            Paragraph("<i>Note: Some characters could not be displayed due to font limitations.</i>", styles['Normal']),
-            Spacer(1, 0.5 * inch),
-            Paragraph("Please ensure proper fonts are installed on the server.", styles['Normal']),
+            Paragraph(f"<i>Error: Could not render some characters. Missing fonts for: {detect_script(str(patient_data))}</i>", styles['Normal']),
         ]
         doc.build(story)
     
-    # Reset buffer position
     buffer.seek(0)
     return buffer
