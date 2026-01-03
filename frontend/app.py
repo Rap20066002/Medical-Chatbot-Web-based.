@@ -124,54 +124,51 @@ def translate_text(text, target_lang='en', source_lang='auto'):
         return text
 
 
-def detect_language_and_confirm(user_text):
-    """
-    Detect language and show confirmation dialog
-    ✅ FIXED: Better error handling, no red error messages
-    """
-    if len(user_text.strip()) < 10:
-        return False
-    
-    try:
-        # ✅ FIX: Increase timeout
-        resp = requests.post(
-            f"{API_BASE_URL}/api/language/detect",
-            json={"text": user_text},
-            timeout=10  # Increased from default 5s
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            detected = data.get("detected")
-            lang_name = data.get("language_name")
-            confidence = data.get("confidence", "low")
-            
-            # Only prompt if high confidence and different from current
-            if confidence == "high" and detected != st.session_state.current_language:
-                st.session_state.pending_language_change = {
-                    "code": detected,
-                    "name": lang_name
-                }
-                return True
-        else:
-            # ✅ FIX: Don't show error, just skip detection
-            print(f"⚠️  Language detection returned {resp.status_code}")
+def detect_and_confirm_language(text, field_name=""):
+        """Detect language from text and show confirmation dialog"""
+        if len(text.strip()) < 10:
             return False
-    
-    except requests.exceptions.Timeout:
-        # ✅ FIX: Silent timeout - don't disrupt user experience
-        print("⚠️  Language detection timeout")
+        
+        try:
+            resp = requests.post(
+                f"{API_BASE_URL}/api/language/detect",
+                json={"text": text},
+                timeout=10
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                detected = data["detected"]
+                lang_name = data["language_name"]
+                confidence = data.get("confidence", "low")
+                
+                # Only prompt if high confidence and different from current
+                if confidence == "high" and detected != st.session_state.current_language:
+                    st.session_state.pending_language_change = {
+                        "code": detected,
+                        "name": lang_name,
+                        "triggered_by": field_name
+                    }
+                    return True
+            else:
+                # ✅ FIX: Don't show error, just skip detection
+                print(f"⚠️  Language detection returned {resp.status_code}")
+                return False
+        
+        except requests.exceptions.Timeout:
+            # ✅ FIX: Silent timeout - don't disrupt user experience
+            print("⚠️  Language detection timeout")
+            return False
+        
+        except requests.exceptions.ConnectionError:
+            print("⚠️  Language detection service unavailable")
+            return False
+        
+        except Exception as e:
+            print(f"⚠️  Language detection error: {str(e)}")
+            return False
+        
         return False
-    
-    except requests.exceptions.ConnectionError:
-        print("⚠️  Language detection service unavailable")
-        return False
-    
-    except Exception as e:
-        print(f"⚠️  Language detection error: {str(e)}")
-        return False
-    
-    return False
 
 def render_language_confirmation():
     """Show language change confirmation dialog"""
@@ -617,63 +614,63 @@ def show_patient_registration():
         
         st.markdown("---")
 
-    # ============================================================
-    # LANGUAGE DETECTION HELPER
-    # ============================================================
-    def detect_and_confirm_language(text, field_name=""):
-        """Detect language from text and show confirmation dialog"""
-        if len(text.strip()) < 10:
-            return False
+    # # ============================================================
+    # # LANGUAGE DETECTION HELPER
+    # # ============================================================
+    # def detect_and_confirm_language(text, field_name=""):
+    #     """Detect language from text and show confirmation dialog"""
+    #     if len(text.strip()) < 10:
+    #         return False
         
-        try:
-            resp = requests.post(
-                f"{API_BASE_URL}/api/language/detect",
-                json={"text": text},
-                timeout=5
-            )
+    #     try:
+    #         resp = requests.post(
+    #             f"{API_BASE_URL}/api/language/detect",
+    #             json={"text": text},
+    #             timeout=5
+    #         )
             
-            if resp.status_code == 200:
-                data = resp.json()
-                detected = data["detected"]
-                lang_name = data["language_name"]
-                confidence = data.get("confidence", "low")
+    #         if resp.status_code == 200:
+    #             data = resp.json()
+    #             detected = data["detected"]
+    #             lang_name = data["language_name"]
+    #             confidence = data.get("confidence", "low")
                 
-                # Only prompt if high confidence and different from current
-                if confidence == "high" and detected != st.session_state.current_language:
-                    st.session_state.pending_language_change = {
-                        "code": detected,
-                        "name": lang_name,
-                        "triggered_by": field_name
-                    }
-                    return True
-        except:
-            pass
-        return False
+    #             # Only prompt if high confidence and different from current
+    #             if confidence == "high" and detected != st.session_state.current_language:
+    #                 st.session_state.pending_language_change = {
+    #                     "code": detected,
+    #                     "name": lang_name,
+    #                     "triggered_by": field_name
+    #                 }
+    #                 return True
+    #     except:
+    #         pass
+    #     return False
     
-    # ============================================================
-    # TRANSLATION HELPER
-    # ============================================================
-    def translate_text(text, target_lang='en', source_lang='auto'):
-        """Translate text to target language"""
-        if target_lang == 'en' or not text:
-            return text
+    # # ============================================================
+    # # TRANSLATION HELPER
+    # # ============================================================
+    # def translate_text(text, target_lang='en', source_lang='auto'):
+    #     """Translate text to target language"""
+    #     if target_lang == 'en' or not text:
+    #         return text
         
-        try:
-            resp = requests.post(
-                f"{API_BASE_URL}/api/language/translate",
-                json={
-                    "text": text,
-                    "source": source_lang,
-                    "target": target_lang
-                },
-                timeout=10
-            )
+    #     try:
+    #         resp = requests.post(
+    #             f"{API_BASE_URL}/api/language/translate",
+    #             json={
+    #                 "text": text,
+    #                 "source": source_lang,
+    #                 "target": target_lang
+    #             },
+    #             timeout=10
+    #         )
             
-            if resp.status_code == 200:
-                return resp.json()["translated"]
-        except:
-            pass
-        return text
+    #         if resp.status_code == 200:
+    #             return resp.json()["translated"]
+    #     except:
+    #         pass
+    #     return text
     
     # ============================================================
     # GET TRANSLATED LABELS
