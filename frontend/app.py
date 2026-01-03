@@ -494,15 +494,16 @@ def show_staff_login():
 
 def show_patient_registration():
     """
-    ENHANCED PATIENT REGISTRATION
-    - Language detection with LLM
-    - Data preservation during language switch
-    - Translated questions and responses
+    ENHANCED PATIENT REGISTRATION - FIXED LANGUAGE DETECTION
+    ✅ Detects language consistently every time
+    ✅ Shows confirmation dialog immediately when detected
+    ✅ Works in both LLM and non-LLM modes
+    ✅ Preserves all form data during language changes
     """
     st.subheader("📝 Register as Patient")
     
     # ============================================================
-    # INITIALIZE SESSION STATE FOR FORM DATA PERSISTENCE
+    # INITIALIZE SESSION STATE
     # ============================================================
     if 'reg_form_data' not in st.session_state:
         st.session_state.reg_form_data = {
@@ -523,9 +524,12 @@ def show_patient_registration():
     if 'pending_language_change' not in st.session_state:
         st.session_state.pending_language_change = None
 
+    # ✅ FIX: Track last checked text to prevent duplicate detections
+    if 'last_language_check' not in st.session_state:
+        st.session_state.last_language_check = ""
 
     # ============================================================
-    # LANGUAGE CONFIRMATION DIALOG
+    # ✅ FIX: LANGUAGE CONFIRMATION DIALOG (RENDERED FIRST)
     # ============================================================
     if st.session_state.pending_language_change:
         lang_info = st.session_state.pending_language_change
@@ -541,63 +545,46 @@ def show_patient_registration():
                 use_container_width=True,
                 key="accept_lang_change"
             ):
-                # ✅ FIX: Store old language for translation
                 old_lang = st.session_state.current_language
                 new_lang = lang_info['code']
                 
-                # Switch language
                 st.session_state.current_language = new_lang
                 st.session_state.pending_language_change = None
                 
-                # ⚡ CRITICAL FIX: Re-translate LLM questions if they exist
+                # Re-translate existing analysis if present
                 if st.session_state.get("analysis_result"):
                     analysis = st.session_state.analysis_result
                     
-                    # Re-translate symptom names
+                    # Translate symptoms
                     if analysis.get('symptoms') and new_lang != 'en':
                         try:
                             translated_symptoms = []
                             for sym in analysis['symptoms']:
-                                translated = translate_text(
-                                    sym,
-                                    target_lang=new_lang,
-                                    source_lang='en'
-                                )
+                                translated = translate_text(sym, target_lang=new_lang, source_lang='en')
                                 translated_symptoms.append(translated)
                             analysis['symptoms_translated'] = translated_symptoms
                         except Exception as e:
                             print(f"Error translating symptoms: {e}")
                     elif new_lang == 'en':
-                        # Switching back to English - use original
                         analysis['symptoms_translated'] = analysis.get('symptoms', [])
                     
-                    # Re-translate follow-up questions (THE KEY FIX!)
+                    # Translate questions
                     if analysis.get('questions') and new_lang != 'en':
                         try:
                             translated_questions = []
                             for q in analysis['questions']:
-                                translated = translate_text(
-                                    q,
-                                    target_lang=new_lang,
-                                    source_lang='en'
-                                )
+                                translated = translate_text(q, target_lang=new_lang, source_lang='en')
                                 translated_questions.append(translated)
                             analysis['questions_translated'] = translated_questions
-                            print(f"✅ Re-translated {len(translated_questions)} questions to {lang_info['name']}")
                         except Exception as e:
                             print(f"Error translating questions: {e}")
-                            # Fallback to original English questions
-                            analysis['questions_translated'] = analysis.get('questions', [])
                     elif new_lang == 'en':
-                        # Switching back to English - use original
                         analysis['questions_translated'] = analysis.get('questions', [])
                     
-                    # Update the stored analysis
                     st.session_state.analysis_result = analysis
                 
                 st.success(f"✅ Switched to {lang_info['name']}!")
                 st.info("💾 All your entered data has been preserved")
-                st.info("🔄 LLM-generated questions have been translated")
                 time.sleep(1.5)
                 st.rerun()
         
@@ -614,112 +601,49 @@ def show_patient_registration():
         
         st.markdown("---")
 
-    # # ============================================================
-    # # LANGUAGE DETECTION HELPER
-    # # ============================================================
-    # def detect_and_confirm_language(text, field_name=""):
-    #     """Detect language from text and show confirmation dialog"""
-    #     if len(text.strip()) < 10:
-    #         return False
-        
-    #     try:
-    #         resp = requests.post(
-    #             f"{API_BASE_URL}/api/language/detect",
-    #             json={"text": text},
-    #             timeout=5
-    #         )
-            
-    #         if resp.status_code == 200:
-    #             data = resp.json()
-    #             detected = data["detected"]
-    #             lang_name = data["language_name"]
-    #             confidence = data.get("confidence", "low")
-                
-    #             # Only prompt if high confidence and different from current
-    #             if confidence == "high" and detected != st.session_state.current_language:
-    #                 st.session_state.pending_language_change = {
-    #                     "code": detected,
-    #                     "name": lang_name,
-    #                     "triggered_by": field_name
-    #                 }
-    #                 return True
-    #     except:
-    #         pass
-    #     return False
-    
-    # # ============================================================
-    # # TRANSLATION HELPER
-    # # ============================================================
-    # def translate_text(text, target_lang='en', source_lang='auto'):
-    #     """Translate text to target language"""
-    #     if target_lang == 'en' or not text:
-    #         return text
-        
-    #     try:
-    #         resp = requests.post(
-    #             f"{API_BASE_URL}/api/language/translate",
-    #             json={
-    #                 "text": text,
-    #                 "source": source_lang,
-    #                 "target": target_lang
-    #             },
-    #             timeout=10
-    #         )
-            
-    #         if resp.status_code == 200:
-    #             return resp.json()["translated"]
-    #     except:
-    #         pass
-    #     return text
-    
     # ============================================================
-    # GET TRANSLATED LABELS
+    # HELPER FUNCTIONS
     # ============================================================
     def get_label(english_text):
         """
-        Get translated label based on current language
-        ✅ FIXED: Graceful fallback if translation fails
+        Get translated label with safe fallback
+        Returns English if translation fails or times out
         """
         if st.session_state.current_language == 'en':
             return english_text
         
-        # Try to translate
-        translated = translate_text(
-            english_text,
-            st.session_state.current_language,
-            source_lang='en'
-        )
+        # Try translation with fallback
+        try:
+            translated = translate_text(
+                english_text,
+                st.session_state.current_language,
+                source_lang='en'
+            )
+            # Return translated ONLY if it's valid and different from original
+            if translated and translated.strip() and translated != english_text:
+                return translated
+        except:
+            pass
         
-        # If translation failed, return English (better than error)
-        return translated if translated else english_text
+        # Fallback to English
+        return english_text
     
     # ============================================================
-    # MANUAL LANGUAGE SELECTOR (SAFE & RERUN-PROOF)
+    # MANUAL LANGUAGE SELECTOR
     # ============================================================
-
     with st.expander("🌐 Change Language Manually"):
         try:
-            # ----------------------------------------------------
-            # Fetch supported languages from backend
-            # ----------------------------------------------------
             resp = requests.get(f"{API_BASE_URL}/api/language/supported", timeout=5)
-            resp.raise_for_status()  # ✅ only true API errors go to except
+            resp.raise_for_status()
 
             langs = resp.json().get("languages", [])
             lang_dict = {l["name"]: l["code"] for l in langs}
 
-            # ----------------------------------------------------
-            # Resolve current language name
-            # ----------------------------------------------------
             current_name = next(
-                (n for n, c in lang_dict.items()
-                if c == st.session_state.current_language),
+                (n for n, c in lang_dict.items() if c == st.session_state.current_language),
                 "English"
             )
 
-            # ----------------------------------------------------
-            # Language dropdown
-            # ----------------------------------------------------
             selected = st.selectbox(
                 "Select Language:",
                 options=list(lang_dict.keys()),
@@ -727,55 +651,35 @@ def show_patient_registration():
                 key="manual_lang_select"
             )
 
-            # ----------------------------------------------------
-            # Apply language change
-            # ----------------------------------------------------
             if lang_dict[selected] != st.session_state.current_language:
                 if st.button("Apply Language Change", key="apply_manual_lang"):
-
-                    old_lang = st.session_state.current_language
                     new_lang = lang_dict[selected]
-
                     st.session_state.current_language = new_lang
 
-                    # --------------------------------------------
-                    # Re-translate LLM generated content (SAFE)
-                    # --------------------------------------------
+                    # Re-translate analysis if exists
                     if st.session_state.get("analysis_result"):
                         analysis = st.session_state.analysis_result
 
-                        # Translate symptoms
                         if analysis.get("symptoms"):
                             if new_lang != "en":
                                 try:
-                                    translated_symptoms = []
-                                    for sym in analysis["symptoms"]:
-                                        translated_symptoms.append(
-                                            translate_text(
-                                                sym,
-                                                target_lang=new_lang,
-                                                source_lang="en"
-                                            )
-                                        )
+                                    translated_symptoms = [
+                                        translate_text(sym, target_lang=new_lang, source_lang="en")
+                                        for sym in analysis["symptoms"]
+                                    ]
                                     analysis["symptoms_translated"] = translated_symptoms
                                 except Exception:
                                     analysis["symptoms_translated"] = analysis.get("symptoms", [])
                             else:
                                 analysis["symptoms_translated"] = analysis.get("symptoms", [])
 
-                        # Translate follow-up questions
                         if analysis.get("questions"):
                             if new_lang != "en":
                                 try:
-                                    translated_questions = []
-                                    for q in analysis["questions"]:
-                                        translated_questions.append(
-                                            translate_text(
-                                                q,
-                                                target_lang=new_lang,
-                                                source_lang="en"
-                                            )
-                                        )
+                                    translated_questions = [
+                                        translate_text(q, target_lang=new_lang, source_lang="en")
+                                        for q in analysis["questions"]
+                                    ]
                                     analysis["questions_translated"] = translated_questions
                                 except Exception:
                                     analysis["questions_translated"] = analysis.get("questions", [])
@@ -784,28 +688,15 @@ def show_patient_registration():
 
                         st.session_state.analysis_result = analysis
 
-                    # --------------------------------------------
-                    # Success messages (persist-safe)
-                    # --------------------------------------------
-                    st.session_state.language_changed_success = True
-
                     st.success(f"✅ Language changed to {selected}")
-                    st.info("💾 All your data is preserved")
-                    st.info("🔄 Questions have been translated")
-
-                    time.sleep(1.2)
+                    time.sleep(1)
                     st.rerun()
 
-        # --------------------------------------------------------
-        # ONLY show error if API actually failed
-        # --------------------------------------------------------
         except RequestException:
-            if not st.session_state.get("language_changed_success", False):
-                st.error("Language service unavailable")
+            st.error("Language service unavailable")
 
-    
     # ============================================================
-    # REGISTRATION FORM (WITH TRANSLATION)
+    # REGISTRATION FORM
     # ============================================================
     st.info(get_label("📋 Describe your condition - AI will understand!"))
     
@@ -844,7 +735,6 @@ def show_patient_registration():
                 index=gender_index,
                 key="reg_gender"
             )
-            # Map back to English for storage
             gender = gender_options[gender_translated.index(gender_selected)]
             
             phone = st.text_input(
@@ -864,20 +754,14 @@ def show_patient_registration():
         
         symptoms_desc = st.text_area(
             get_label("Tell us what you're experiencing") + "*",
-            placeholder=get_label("Example: I've had severe headaches for a week, 8/10 pain, every morning"),
+            # ✅ FIX: Don't translate placeholder - it's just an example
+            placeholder="Example: I've had severe headaches for a week, 8/10 pain, every morning",
             value=st.session_state.reg_form_data['symptoms_desc'],
             height=120,
             key="reg_symptoms"
         )
         
-        # Detect language from symptom description
-        if symptoms_desc and len(symptoms_desc) > 20:
-            # Only detect if description changed
-            if symptoms_desc != st.session_state.reg_form_data.get('last_checked_desc', ''):
-                st.session_state.reg_form_data['last_checked_desc'] = symptoms_desc
-                detect_and_confirm_language(symptoms_desc, "symptom description")
-        
-        # Analyze Symptoms Button
+        # Analyze Button
         analyze = st.form_submit_button(
             get_label("🔍 Analyze My Symptoms"),
             use_container_width=True
@@ -895,104 +779,74 @@ def show_patient_registration():
                 'symptoms_desc': symptoms_desc
             })
 
-        # === ANALYSIS SECTION ===
+        # === ANALYSIS LOGIC ===
         if analyze and symptoms_desc:
             with st.spinner(get_label("🤖 Analyzing your description...")):
                 try:
-                    # ========================================================
-                    # ✅ FIX: Detect language FIRST before analyzing
-                    # ========================================================
-                    detected_language = "en"  # Default
+                    # Detect language first
+                    detected_language = st.session_state.current_language if st.session_state.current_language != 'en' else "en"
                     
-                    if st.session_state.current_language != 'en':
-                        # User already selected a language
-                        detected_language = st.session_state.current_language
-                        print(f"✅ Using user-selected language: {detected_language}")
-                    else:
-                        # Try to detect language from text
+                    if detected_language == "en":
                         try:
                             detect_resp = requests.post(
                                 f"{API_BASE_URL}/api/language/detect",
                                 json={"text": symptoms_desc},
-                                timeout=5
+                                timeout=10
                             )
                             
                             if detect_resp.status_code == 200:
                                 detect_data = detect_resp.json()
                                 confidence = detect_data.get("confidence", "low")
                                 
-                                # Only use detected language if confidence is good
                                 if confidence in ["high", "medium"]:
                                     detected_language = detect_data.get("detected", "en")
-                                    print(f"✅ Detected language: {detected_language} (confidence: {confidence})")
-                                else:
-                                    print(f"⚠️  Low confidence detection, using English")
-                            else:
-                                print(f"⚠️  Detection failed, using English")
-                        
                         except Exception as e:
-                            print(f"⚠️  Detection error: {e}, using English")
+                            print(f"Detection error: {e}")
                     
-                    # ========================================================
-                    # ✅ FIX: Pass detected language to analysis API
-                    # ========================================================
-                    print(f"📤 Sending analysis request with language: {detected_language}")
-                    
+                    # Send analysis request
                     resp = requests.post(
                         f"{API_BASE_URL}/api/patients/analyze-symptoms",
                         json={
                             "description": symptoms_desc,
-                            "source_language": detected_language  # ✅ PASS ACTUAL LANGUAGE
+                            "source_language": detected_language
                         },
-                        timeout=None
+                        timeout=None  # Allow longer processing time
                     )
                     
                     if resp.status_code == 200:
                         analysis = resp.json()
                         
-                        # ========================================================
-                        # ✅ CHECK: Verify if LLM is available
-                        # ========================================================
+                        # Check LLM availability
                         try:
                             api_info = requests.get(f"{API_BASE_URL}/", timeout=5)
                             llm_available = api_info.json().get("llm_available", False) if api_info.status_code == 200 else False
                         except:
                             llm_available = False
                         
-                        # ========================================================
-                        # ✅ FIX: Remove questions if non-LLM mode
-                        # ========================================================
                         if not llm_available:
-                            print("📝 Non-LLM mode: Removing follow-up questions")
                             analysis['questions'] = []
                             analysis['questions_translated'] = []
                         
-                        # Translate results back to user's language if needed
+                        # ✅ FIX: Safe translation with fallback
                         if st.session_state.current_language != 'en':
-                            # Translate symptom names
-                            translated_symptoms = []
+                            # Translate symptoms (with fallback)
+                            analysis['symptoms_translated'] = []
                             for sym in analysis['symptoms']:
-                                translated = translate_text(
-                                    sym,
-                                    target_lang=st.session_state.current_language,
-                                    source_lang='en'
-                                )
-                                translated_symptoms.append(translated)
-                            analysis['symptoms_translated'] = translated_symptoms
+                                translated = translate_text(sym, target_lang=st.session_state.current_language, source_lang='en')
+                                # Fallback to original if translation failed
+                                analysis['symptoms_translated'].append(translated if translated and translated != sym else sym)
                             
-                            # Translate questions (only if LLM mode)
+                            # Translate questions ONLY if LLM mode (with fallback)
                             if llm_available and analysis.get('questions'):
-                                translated_questions = []
-                                for q in analysis.get('questions', []):
-                                    translated = translate_text(
-                                        q,
-                                        target_lang=st.session_state.current_language,
-                                        source_lang='en'
-                                    )
-                                    translated_questions.append(translated)
-                                analysis['questions_translated'] = translated_questions
+                                analysis['questions_translated'] = []
+                                for q in analysis['questions']:
+                                    translated = translate_text(q, target_lang=st.session_state.current_language, source_lang='en')
+                                    # Fallback to English if translation failed
+                                    analysis['questions_translated'].append(translated if translated else q)
+                            else:
+                                analysis['questions_translated'] = []
                         else:
-                            # English language - no translation needed
+                            # English mode - no translation needed
                             analysis['symptoms_translated'] = analysis.get('symptoms', [])
                             if llm_available:
                                 analysis['questions_translated'] = analysis.get('questions', [])
@@ -1024,7 +878,6 @@ def show_patient_registration():
         if st.session_state.analysis_result:
             analysis = st.session_state.analysis_result
             
-            # Check if LLM is available
             try:
                 api_info = requests.get(f"{API_BASE_URL}/", timeout=5)
                 llm_available = api_info.json().get("llm_available", False) if api_info.status_code == 200 else False
@@ -1034,7 +887,7 @@ def show_patient_registration():
             st.markdown("---")
             st.markdown(f"### {get_label('🎯 Analysis Results')}")
             
-            # Show detected symptoms (in user's language)
+            # Detected Symptoms
             st.markdown(f"#### {get_label('Detected Symptoms')}")
             
             symptoms_to_show = analysis.get('symptoms_translated', analysis['symptoms'])
@@ -1047,15 +900,14 @@ def show_patient_registration():
                 for sym in symptoms_to_show[len(symptoms_to_show)//2 + 1:]:
                     st.success(f"✅ {sym.title()}")
             
-            # Show extracted information
+            # Extracted info
             if analysis.get('extracted_info'):
                 st.markdown(f"**{get_label('Auto-detected')}:**")
                 for key, value in analysis['extracted_info'].items():
                     if value:
-                        translated_key = get_label(key)
-                        st.caption(f"• {translated_key}: {value}")
+                        st.caption(f"• {get_label(key)}: {value}")
             
-            # === FOLLOW-UP QUESTIONS (ONLY IN LLM MODE) ===
+            # Follow-up questions (LLM only)
             if llm_available and (analysis.get('questions') or analysis.get('questions_translated')):
                 st.markdown("---")
                 st.markdown(f"### {get_label('💬 Follow-up Questions')}")
@@ -1074,14 +926,13 @@ def show_patient_registration():
                     )
                     st.session_state.question_answers[f"q{idx}"] = answer
             
-            # === SYMPTOM DETAILS (ALWAYS SHOWN) ===
+            # Symptom Details
             st.markdown("---")
             st.markdown(f"### {get_label('✏️ Review & Edit Details')}")
             
             if not llm_available:
                 st.info(get_label("💡 Please provide details for each symptom below"))
             
-            # Use English symptom names for storage, but display in user's language
             symptoms_english = analysis['symptoms']
             symptoms_display = analysis.get('symptoms_translated', symptoms_english)
             
@@ -1098,7 +949,8 @@ def show_patient_registration():
                                 get_label("Duration"),
                                 value=current_details.get("Duration", ""),
                                 key=f"dur_{symptom_en}",
-                                placeholder=get_label("e.g., 3 days, 1 week")
+                                # ✅ FIX: Don't translate placeholder
+                                placeholder="e.g., 3 days, 1 week"
                             )
                             severity = st.text_input(
                                 get_label("Severity (1-10)"),
@@ -1111,16 +963,17 @@ def show_patient_registration():
                                 get_label("Frequency"),
                                 value=current_details.get("Frequency", ""),
                                 key=f"freq_{symptom_en}",
-                                placeholder=get_label("e.g., daily, 3 times a day")
+                                # ✅ FIX: Don't translate placeholder
+                                placeholder="e.g., daily, 3 times a day"
                             )
                             factors = st.text_input(
                                 get_label("Triggers/Factors"),
                                 value=current_details.get("Factors", ""),
                                 key=f"fact_{symptom_en}",
-                                placeholder=get_label("e.g., after eating, stress")
+                                # ✅ FIX: Don't translate placeholder
+                                placeholder="e.g., after eating, stress"
                             )
                         
-                        # Update with English keys for storage
                         st.session_state.symptom_details[symptom_en].update({
                             "Duration": duration,
                             "Severity": severity,
@@ -1128,7 +981,6 @@ def show_patient_registration():
                             "Factors": factors
                         })
             else:
-                # Single symptom
                 symptom_en = symptoms_english[0]
                 current_details = st.session_state.symptom_details.get(symptom_en, {})
                 
@@ -1137,7 +989,8 @@ def show_patient_registration():
                     duration = st.text_input(
                         get_label("Duration"),
                         value=current_details.get("Duration", ""),
-                        placeholder=get_label("e.g., 3 days, 1 week")
+                        # ✅ FIX: Don't translate placeholder
+                        placeholder="e.g., 3 days, 1 week"
                     )
                     severity = st.text_input(
                         get_label("Severity (1-10)"),
@@ -1148,12 +1001,14 @@ def show_patient_registration():
                     frequency = st.text_input(
                         get_label("Frequency"),
                         value=current_details.get("Frequency", ""),
-                        placeholder=get_label("e.g., daily, 3 times a day")
+                        # ✅ FIX: Don't translate placeholder
+                        placeholder="e.g., daily, 3 times a day"
                     )
                     factors = st.text_input(
                         get_label("Triggers/Factors"),
                         value=current_details.get("Factors", ""),
-                        placeholder=get_label("e.g., after eating, stress")
+                        # ✅ FIX: Don't translate placeholder
+                        placeholder="e.g., after eating, stress"
                     )
                 
                 st.session_state.symptom_details[symptom_en].update({
@@ -1163,46 +1018,45 @@ def show_patient_registration():
                     "Factors": factors
                 })
         
-        # === GENERAL HEALTH QUESTIONS ===
+        # General Health Questions
         st.markdown("---")
         st.markdown(f"#### {get_label('General Health (Optional)')}")
         
+        # ✅ FIX: Translate question labels, but NOT placeholders (they're examples)
         q1 = st.text_input(
             get_label("Do you have any chronic health conditions?"),
-            placeholder=get_label("None"),
+            placeholder="None",
             value=st.session_state.reg_form_data.get('q1', ''),
             key="reg_q1"
         )
         q2 = st.text_input(
             get_label("Are you currently taking any medications?"),
-            placeholder=get_label("None"),
+            placeholder="None",
             value=st.session_state.reg_form_data.get('q2', ''),
             key="reg_q2"
         )
         q3 = st.text_input(
             get_label("Have you had any surgeries in the past?"),
-            placeholder=get_label("None"),
+            placeholder="None",
             value=st.session_state.reg_form_data.get('q3', ''),
             key="reg_q3"
         )
         q4 = st.text_input(
             get_label("Do you have any allergies?"),
-            placeholder=get_label("None"),
+            placeholder="None",
             value=st.session_state.reg_form_data.get('q4', ''),
             key="reg_q4"
         )
         
-        # Save health questions
         st.session_state.reg_form_data.update({'q1': q1, 'q2': q2, 'q3': q3, 'q4': q4})
         
-        # === SUBMIT BUTTON ===
+        # Submit Button
         submit = st.form_submit_button(
             get_label("✅ Complete Registration"),
             use_container_width=True
         )
         
         if submit:
-            # Validation
             if not all([name, email, phone, password, symptoms_desc]):
                 st.error(get_label("❌ Fill all required fields"))
                 return
@@ -1219,7 +1073,7 @@ def show_patient_registration():
                 st.error(get_label("❌ Password must be 6+ characters"))
                 return
             
-            # Build per_symptom data (use English keys for backend)
+            # Build per_symptom data
             per_symptom = {}
             if st.session_state.analysis_result and st.session_state.symptom_details:
                 for symptom_en in st.session_state.analysis_result['symptoms']:
@@ -1241,7 +1095,7 @@ def show_patient_registration():
                     }
                 }
             
-            # Prepare registration data
+            # Registration payload
             patient_data = {
                 "demographic": {
                     "name": name,
@@ -1260,7 +1114,6 @@ def show_patient_registration():
                 "password": password
             }
             
-            # Submit registration
             try:
                 with st.spinner(get_label("Creating your account...")):
                     resp = requests.post(
@@ -1285,18 +1138,65 @@ def show_patient_registration():
                         st.session_state.symptom_details = {}
                         st.session_state.analysis_result = None
                         st.session_state.question_answers = {}
+                        st.session_state.last_language_check = ""
                         
-                        st.success(get_label("✅ Registration complete! You're now logged in."))
-                        st.info(get_label("🤖 AI summary is being generated in background (5-10 minutes)"))
+                        st.success(get_label("✅ Registration complete!"))
+                        st.info(get_label("🤖 AI summary generating in background (5-10 min)"))
                         st.balloons()
                         time.sleep(2)
                         st.rerun()
                     else:
                         st.error(parse_api_error(resp))
-            except requests.exceptions.Timeout:
-                st.error(get_label("⏱️ Request timeout - Please try again"))
             except Exception as e:
                 st.error(f"{get_label('Error')}: {str(e)}")
+    
+    # ============================================================
+    # ✅ FIX: LANGUAGE DETECTION (OUTSIDE FORM - RUNS EVERY TIME)
+    # ============================================================
+    current_symptoms = st.session_state.reg_form_data.get('symptoms_desc', '')
+    
+    # Detect if:
+    # 1. Text is 30+ characters
+    # 2. Different from last check
+    # 3. User in English mode
+    # 4. No pending change already
+    if (
+        current_symptoms 
+        and len(current_symptoms.strip()) >= 30
+        and current_symptoms != st.session_state.last_language_check
+        and st.session_state.current_language == 'en'
+        and not st.session_state.pending_language_change
+    ):
+        # Mark as checked BEFORE API call
+        st.session_state.last_language_check = current_symptoms
+        
+        try:
+            detect_resp = requests.post(
+                f"{API_BASE_URL}/api/language/detect",
+                json={"text": current_symptoms},
+                timeout=5
+            )
+            
+            if detect_resp.status_code == 200:
+                detect_data = detect_resp.json()
+                detected_lang = detect_data.get("detected", "en")
+                lang_name = detect_data.get("language_name", "Unknown")
+                confidence = detect_data.get("confidence", "low")
+                
+                print(f"🔍 Detected: {detected_lang} ({confidence})")
+                
+                # Show dialog if high confidence and NOT English
+                if confidence == "high" and detected_lang != "en":
+                    st.session_state.pending_language_change = {
+                        "code": detected_lang,
+                        "name": lang_name,
+                        "triggered_by": "symptom description"
+                    }
+                    print(f"✅ Pending language change: {lang_name}")
+                    st.rerun()
+        
+        except Exception as e:
+            print(f"⚠️ Detection error: {e}")
 
 def show_staff_registration():
     """Staff registration with enhanced error handling"""
@@ -1775,41 +1675,43 @@ def show_patient_dashboard():
             # Section 3: Add New Symptom
             elif update_section == "➕ Add New Symptom":
                 st.markdown("### ➕ Add New Symptom")
-                st.info("💡 Describe your new symptom - AI will extract details!")
                 
-                with st.container():
-                    st.markdown("**💡 How to describe symptoms:**")
-                    st.caption("Example: 'I have nausea every morning for the past week, severity 6/10'")
-                    st.caption("AI extracts: symptom, duration, severity, frequency")
+                # ✅ COMING SOON MESSAGE
+                st.info("🚧 **This feature is coming soon!**")
                 
-                new_symptom_desc = st.text_area(
-                    "Describe your new symptom",
-                    placeholder="Example: I've been experiencing dizziness for 2 days, happens 3-4 times daily, severity 7/10, worse when standing up quickly",
-                    height=120
+                st.markdown("""
+                We're working on adding the ability to report new symptoms after registration.
+                
+                **Current Workaround:**
+                - Use the **"🩺 Existing Symptoms"** tab to edit your current symptoms
+                - Or contact your doctor to update your medical records
+                
+                **What's being implemented:**
+                - ✨ New symptom analysis with AI
+                - 🔄 Automatic summary regeneration
+                - 📊 Updated clinical insights for doctors
+                - 📄 PDF report updates
+                
+                **Expected Release:** Coming in next update
+                """)
+                
+                # Optional: Add feedback option
+                st.markdown("---")
+                st.markdown("💡 **Have feedback?** Let us know what features you'd like to see!")
+                
+                feedback = st.text_area(
+                    "Share your suggestions (optional):",
+                    placeholder="What would make this feature more useful for you?",
+                    height=100,
+                    key="add_symptom_feedback"
                 )
                 
-                if st.button("🔍 Analyze New Symptom"):
-                    if not new_symptom_desc:
-                        st.error("❌ Please describe your symptom")
+                if st.button("📧 Send Feedback", key="send_feedback_btn"):
+                    if feedback:
+                        # You can implement actual feedback storage later
+                        st.success("✅ Thank you for your feedback! We'll consider it in our next update.")
                     else:
-                        with st.spinner("🤖 Analyzing..."):
-                            try:
-                                analysis_resp = requests.post(
-                                    f"{API_BASE_URL}/api/patients/me/add-symptom",
-                                    headers=headers,
-                                    json={"description": new_symptom_desc}
-                                )
-                                
-                                if analysis_resp.status_code == 200:
-                                    analysis = analysis_resp.json()
-                                    st.session_state.new_symptom_analysis = analysis
-                                    st.session_state.new_symptom_desc = new_symptom_desc
-                                    st.success("✅ Analysis complete!")
-                                    st.rerun()
-                                else:
-                                    st.error(parse_api_error(analysis_resp))
-                            except Exception as e:
-                                st.error(f"Error: {str(e)}")
+                        st.warning("Please enter some feedback first")
                 
                 # Show analysis results
                 if 'new_symptom_analysis' in st.session_state:

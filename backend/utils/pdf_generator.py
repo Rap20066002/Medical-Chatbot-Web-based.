@@ -1,7 +1,7 @@
 """
-ULTIMATE MULTILINGUAL PDF GENERATOR - FIXED VERSION
-✅ Working download URLs for all fonts
-✅ Supports: Arabic, Hindi, Korean, Chinese, Japanese, Thai, Hebrew, Russian, Greek
+ULTIMATE MULTILINGUAL PDF GENERATOR - FIXED VERSION WITH GUJARATI
+✅ Now includes proper Gujarati font support
+✅ All other languages preserved
 """
 
 from io import BytesIO
@@ -21,24 +21,26 @@ import tempfile
 
 def download_noto_fonts():
     """
-    Download Google Noto Sans fonts - FIXED WORKING URLS
-    These fonts are free and open source from Google Fonts
+    Download Google Noto Sans fonts - FIXED with Gujarati
     """
     fonts_dir = os.path.join(tempfile.gettempdir(), "noto_fonts")
     os.makedirs(fonts_dir, exist_ok=True)
     
-    # ✅ FIXED: Working URLs from Google Fonts API and GitHub releases
+    # ✅ FIXED: Added Gujarati font
     font_urls = {
-        # Base Latin font (English, Spanish, French, German, etc.)
+        # Base Latin font
         'NotoSans-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
         
-        # Hindi (Devanagari script)
+        # Hindi (Devanagari)
         'NotoSansDevanagari-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf',
+        
+        # ✅ NEW: Gujarati (separate from Devanagari!)
+        'NotoSansGujarati-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansgujarati/NotoSansGujarati%5Bwdth%2Cwght%5D.ttf',
         
         # Arabic
         'NotoSansArabic-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosansarabic/NotoSansArabic%5Bwdth%2Cwght%5D.ttf',
         
-        # ✅ FIXED: Korean (Hangul) - Correct URL
+        # Korean
         'NotoSansKR-Regular.ttf': 'https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf',
         
         # Chinese Simplified
@@ -69,7 +71,6 @@ def download_noto_fonts():
         try:
             print(f"📥 Downloading {font_name}...")
             
-            # Add user agent to avoid 403 errors
             req = urllib.request.Request(
                 url,
                 headers={'User-Agent': 'Mozilla/5.0'}
@@ -78,23 +79,16 @@ def download_noto_fonts():
             with urllib.request.urlopen(req, timeout=30) as response:
                 font_data = response.read()
                 
-                # Verify we got actual font data
                 if len(font_data) < 1000:
                     print(f"⚠️  {font_name} download too small, skipping")
                     continue
                 
-                # Write to file
                 with open(font_path, 'wb') as f:
                     f.write(font_data)
                 
                 print(f"✅ Downloaded {font_name} ({len(font_data) // 1024} KB)")
                 downloaded_fonts[font_name] = font_path
         
-        except urllib.error.HTTPError as e:
-            print(f"⚠️  HTTP Error downloading {font_name}: {e.code} {e.reason}")
-            print(f"   URL: {url}")
-        except urllib.error.URLError as e:
-            print(f"⚠️  Network error downloading {font_name}: {e.reason}")
         except Exception as e:
             print(f"⚠️  Failed to download {font_name}: {e}")
     
@@ -108,11 +102,10 @@ def download_noto_fonts():
 
 def setup_multilingual_fonts():
     """
-    Setup fonts with COMPREHENSIVE language support
-    Priority: Download Noto fonts > System fonts > Fallback
+    Setup fonts with Gujarati support added
     """
     
-    # STEP 1: Try to download Noto fonts (best option)
+    # Try to download Noto fonts
     try:
         noto_fonts = download_noto_fonts()
         
@@ -138,6 +131,15 @@ def setup_multilingual_fonts():
                 except Exception as e:
                     print(f"⚠️  Failed to register Hindi font: {e}")
             
+            # ✅ NEW: Register Gujarati (critical fix!)
+            if 'NotoSansGujarati-Regular.ttf' in noto_fonts:
+                try:
+                    pdfmetrics.registerFont(TTFont('MultiLang-Gujarati', noto_fonts['NotoSansGujarati-Regular.ttf']))
+                    registered_count += 1
+                    print("✅ Registered: Gujarati")
+                except Exception as e:
+                    print(f"⚠️  Failed to register Gujarati font: {e}")
+            
             # Register Arabic
             if 'NotoSansArabic-Regular.ttf' in noto_fonts:
                 try:
@@ -147,7 +149,7 @@ def setup_multilingual_fonts():
                 except Exception as e:
                     print(f"⚠️  Failed to register Arabic font: {e}")
             
-            # ✅ Register Korean
+            # Register Korean
             if 'NotoSansKR-Regular.ttf' in noto_fonts:
                 try:
                     pdfmetrics.registerFont(TTFont('MultiLang-Korean', noto_fonts['NotoSansKR-Regular.ttf']))
@@ -199,23 +201,16 @@ def setup_multilingual_fonts():
     except Exception as e:
         print(f"⚠️  Font download/registration failed: {e}")
     
-    # STEP 2: Try system fonts (fallback)
+    # Fallback to system fonts
     print("\n🔄 Trying system fonts...")
     
     system_fonts = [
-        # Windows - Best coverage
+        # Windows
         {
             'name': 'Arial Unicode MS',
             'regular': [
                 'C:\\Windows\\Fonts\\ARIALUNI.TTF',
                 'C:\\Windows\\Fonts\\arialuni.ttf',
-            ]
-        },
-        {
-            'name': 'Malgun Gothic',  # Korean support on Windows
-            'regular': [
-                'C:\\Windows\\Fonts\\malgun.ttf',
-                'C:\\Windows\\Fonts\\Malgun.ttf',
             ]
         },
         # Linux
@@ -224,13 +219,6 @@ def setup_multilingual_fonts():
             'regular': [
                 '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
                 '/usr/share/fonts/noto/NotoSans-Regular.ttf',
-            ]
-        },
-        {
-            'name': 'DejaVu Sans',
-            'regular': [
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                '/usr/share/fonts/dejavu/DejaVuSans.ttf',
             ]
         },
         # Mac
@@ -254,23 +242,19 @@ def setup_multilingual_fonts():
                 except Exception as e:
                     continue
     
-    # STEP 3: Fallback to Helvetica
     print("⚠️  Using Helvetica (limited Unicode support)")
-    print("   Some languages may show as boxes")
     return False, 'Helvetica', 'Helvetica-Bold'
 
 
 def detect_script(text):
     """
-    Detect which script the text belongs to
-    Returns: 'arabic', 'hindi', 'korean', 'chinese', 'japanese', 'thai', 'hebrew', 'latin'
+    ✅ FIXED: Now properly detects Gujarati separately from Hindi
     """
     if not text:
         return 'latin'
     
-    # Count characters by script
     script_counts = {
-        'arabic': 0, 'hindi': 0, 'korean': 0, 'chinese': 0,
+        'arabic': 0, 'hindi': 0, 'gujarati': 0, 'korean': 0, 'chinese': 0,
         'japanese': 0, 'thai': 0, 'hebrew': 0, 'latin': 0
     }
     
@@ -281,7 +265,12 @@ def detect_script(text):
         if 0x0600 <= code <= 0x06FF or 0xFB50 <= code <= 0xFDFF or 0xFE70 <= code <= 0xFEFF:
             script_counts['arabic'] += 1
         
-        # Devanagari (Hindi, Marathi, Sanskrit)
+        # ✅ CRITICAL FIX: Gujarati BEFORE Devanagari (more specific range)
+        # Gujarati Unicode range: U+0A80 to U+0AFF
+        elif 0x0A80 <= code <= 0x0AFF:
+            script_counts['gujarati'] += 1
+        
+        # Devanagari (Hindi, Marathi, Sanskrit) - U+0900 to U+097F
         elif 0x0900 <= code <= 0x097F:
             script_counts['hindi'] += 1
         
@@ -305,14 +294,13 @@ def detect_script(text):
         elif 0x0590 <= code <= 0x05FF:
             script_counts['hebrew'] += 1
         
-        # Latin (English, Spanish, etc.)
+        # Latin
         elif (0x0041 <= code <= 0x005A) or (0x0061 <= code <= 0x007A):
             script_counts['latin'] += 1
     
     # Return script with highest count
     max_script = max(script_counts, key=script_counts.get)
     
-    # If all counts are 0, default to latin
     if script_counts[max_script] == 0:
         return 'latin'
     
@@ -320,14 +308,14 @@ def detect_script(text):
 
 
 def is_rtl_text(text):
-    """Check if text is Right-to-Left (Arabic, Hebrew)"""
+    """Check if text is Right-to-Left"""
     script = detect_script(text)
     return script in ['arabic', 'hebrew']
 
 
 def get_font_for_text(text, is_bold=False):
     """
-    Dynamically select the best font for the text
+    ✅ FIXED: Now properly selects Gujarati font
     """
     script = detect_script(text)
     
@@ -335,6 +323,7 @@ def get_font_for_text(text, is_bold=False):
     font_map = {
         'arabic': 'MultiLang-Arabic',
         'hindi': 'MultiLang-Hindi',
+        'gujarati': 'MultiLang-Gujarati',  # ✅ NEW: Separate Gujarati font
         'korean': 'MultiLang-Korean',
         'chinese': 'MultiLang-Chinese',
         'japanese': 'MultiLang-Japanese',
@@ -345,17 +334,15 @@ def get_font_for_text(text, is_bold=False):
     
     selected_font = font_map.get(script, 'MultiLang')
     
-    # Check if font is registered, fallback if not
+    # Check if font is registered
     try:
         pdfmetrics.getFont(selected_font)
         return selected_font
     except:
-        # Try base MultiLang font
         try:
             pdfmetrics.getFont('MultiLang')
             return 'MultiLang-Bold' if is_bold else 'MultiLang'
         except:
-            # Ultimate fallback
             return 'Helvetica-Bold' if is_bold else 'Helvetica'
 
 
@@ -385,7 +372,7 @@ def reshape_arabic_text(text):
 
 def create_multilingual_paragraph(text, style, is_bold=False, has_font=True):
     """
-    Create paragraph with AUTOMATIC font selection
+    Create paragraph with automatic font selection (now includes Gujarati)
     """
     if not text:
         return Paragraph("", style)
@@ -418,10 +405,64 @@ def create_multilingual_paragraph(text, style, is_bold=False, has_font=True):
         return Paragraph(processed_text, fallback_style)
 
 
+def create_safe_filename(original_name: str, fallback: str = "Patient") -> tuple:
+    """Create both Unicode filename AND ASCII fallback"""
+    import re
+    
+    # Clean the original name
+    unicode_filename = re.sub(r'[<>:"/\\|?*]', '', original_name)
+    unicode_filename = unicode_filename.strip() or fallback
+    
+    # Create ASCII fallback
+    ascii_filename = create_ascii_fallback(unicode_filename, fallback)
+    
+    return unicode_filename, ascii_filename
+
+
+def create_ascii_fallback(text: str, fallback: str = "Patient") -> str:
+    """Create ASCII-safe filename with intelligent transliteration"""
+    import unicodedata
+    import re
+    
+    # Unicode normalization
+    try:
+        nfd = unicodedata.normalize('NFD', text)
+        ascii_text = ''.join(char for char in nfd if unicodedata.category(char) != 'Mn')
+        ascii_text = re.sub(r'[^a-zA-Z0-9\s]', '', ascii_text)
+        ascii_text = re.sub(r'\s+', '_', ascii_text.strip())
+        
+        if ascii_text and len(ascii_text) >= 2:
+            return ascii_text
+    except:
+        pass
+    
+    # Try Unidecode
+    try:
+        from unidecode import unidecode
+        transliterated = unidecode(text)
+        transliterated = re.sub(r'[^a-zA-Z0-9\s]', '', transliterated)
+        transliterated = re.sub(r'\s+', '_', transliterated.strip())
+        
+        if transliterated and len(transliterated) >= 2:
+            return transliterated
+    except:
+        pass
+    
+    # Extract Latin characters
+    latin_chars = re.findall(r'[a-zA-Z0-9]+', text)
+    if latin_chars:
+        extracted = '_'.join(latin_chars)
+        if len(extracted) >= 2:
+            return extracted
+    
+    return fallback
+
+
 def generate_patient_pdf(patient_data):
     """
-    Generate PDF with AUTOMATIC multilingual support
+    Generate PDF with full multilingual support including Gujarati
     """
+    from urllib.parse import quote
     
     # Create PDF buffer
     buffer = BytesIO()
@@ -477,7 +518,7 @@ def generate_patient_pdf(patient_data):
     # Build PDF content
     story = []
     
-    # === TITLE ===
+    # Title
     title = create_multilingual_paragraph(
         "PATIENT HEALTH ASSESSMENT REPORT",
         header_style,
@@ -487,7 +528,7 @@ def generate_patient_pdf(patient_data):
     story.append(title)
     story.append(Spacer(1, 0.2 * inch))
     
-    # === DATE ===
+    # Date
     date_str = datetime.now().strftime('%B %d, %Y at %I:%M %p')
     date_para = create_multilingual_paragraph(
         f"<i>Generated on: {date_str}</i>",
@@ -497,7 +538,7 @@ def generate_patient_pdf(patient_data):
     story.append(date_para)
     story.append(Spacer(1, 0.3 * inch))
     
-    # === PATIENT INFORMATION ===
+    # Patient Information
     story.append(create_multilingual_paragraph(
         "Patient Information",
         subheader_style,
@@ -534,7 +575,7 @@ def generate_patient_pdf(patient_data):
     story.append(demo_table)
     story.append(Spacer(1, 0.3 * inch))
     
-    # === CLINICAL SUMMARY ===
+    # Clinical Summary
     if "summary" in patient_data and patient_data["summary"]:
         story.append(create_multilingual_paragraph(
             "Clinical Summary",
@@ -551,7 +592,7 @@ def generate_patient_pdf(patient_data):
         story.append(summary_para)
         story.append(Spacer(1, 0.3 * inch))
     
-    # === SYMPTOMS ===
+    # Symptoms
     story.append(create_multilingual_paragraph(
         "Reported Symptoms",
         subheader_style,
@@ -594,7 +635,7 @@ def generate_patient_pdf(patient_data):
     story.append(symptoms_table)
     story.append(Spacer(1, 0.3 * inch))
     
-    # === HEALTH INFORMATION ===
+    # Health Information
     story.append(create_multilingual_paragraph(
         "General Health Information",
         subheader_style,

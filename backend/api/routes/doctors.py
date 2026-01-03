@@ -1,11 +1,12 @@
 """
-Doctor Routes - COMPLETE VERSION
-With password change functionality
+Doctor Routes - IMPROVED VERSION
+✅ Handles DuplicateKeyError from database unique constraint
+✅ Better error messages for duplicate emails
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, field_validator
-from typing import Optional
+from pymongo.errors import DuplicateKeyError
 import time
 
 from api.middleware.auth import hash_password, verify_password, get_current_doctor
@@ -13,6 +14,7 @@ from models.patient import TokenData
 from core.database import db_manager
 
 router = APIRouter()
+
 
 class DoctorRegister(BaseModel):
     name: str
@@ -40,6 +42,7 @@ class DoctorRegister(BaseModel):
             raise ValueError('Password must be at least 6 characters long')
         return v
 
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
@@ -51,20 +54,55 @@ class PasswordChange(BaseModel):
             raise ValueError('Password must be at least 6 characters long')
         return v
 
+
 @router.post("/register")
 async def register_doctor(doctor_data: DoctorRegister):
-    """Register a new doctor (pending approval)"""
+    """
+    Register a new doctor (pending approval)
+    ✅ MongoDB unique constraint automatically prevents duplicate emails
+    ✅ Better error messages
+    """
     try:
-        existing = db_manager.doctors.find_one({"email": doctor_data.email.lower()})
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Doctor with this email already exists"
-            )
+        target_email = doctor_data.email.lower().strip()
         
+        # ============================================================
+        # ✅ IMPROVED: Check for duplicates before attempting insert
+        # This gives us a chance to provide better error messages
+        # ============================================================
+        existing = db_manager.doctors.find_one({"email": target_email})
+        if existing:
+            existing_status = existing.get("status", "pending")
+            
+            if existing_status == "pending":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{doctor_data.email}' already has a pending registration. Please wait for admin approval or contact support."
+                )
+            elif existing_status == "approved":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{doctor_data.email}' is already registered as an approved doctor. Please try logging in instead."
+                )
+            elif existing_status == "rejected":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{doctor_data.email}' was previously rejected. Please contact administration or use a different email."
+                )
+            elif existing_status == "disabled":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{doctor_data.email}' account is disabled. Please contact administration."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{doctor_data.email}' is already registered. Please use a different email or try logging in."
+                )
+        
+        # Create doctor record
         doctor_record = {
             "name": doctor_data.name,
-            "email": doctor_data.email.lower(),
+            "email": target_email,
             "specialization": doctor_data.specialization,
             "license_number": doctor_data.license_number,
             "password": hash_password(doctor_data.password),
@@ -72,19 +110,38 @@ async def register_doctor(doctor_data: DoctorRegister):
             "created_at": time.time()
         }
         
-        db_manager.doctors.insert_one(doctor_record)
+        # ============================================================
+        # ✅ IMPROVED: Try to insert with database constraint handling
+        # ============================================================
+        try:
+            db_manager.doctors.insert_one(doctor_record)
+            print(f"✅ Doctor registered: {target_email} (pending approval)")
+            
+            return {
+                "message": "Registration submitted successfully! Your account is pending admin approval.",
+                "status": "pending",
+                "email": doctor_data.email,
+                "next_steps": "You will be notified once your account is approved. This usually takes 24-48 hours."
+            }
         
-        return {
-            "message": "Registration submitted for admin approval",
-            "status": "pending"
-        }
+        except DuplicateKeyError:
+            # This catches race conditions where two requests happen simultaneously
+            print(f"⚠️  Duplicate key error for: {target_email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Email '{doctor_data.email}' was just registered by another request. Please try logging in or use a different email."
+            )
+    
     except HTTPException as he:
         raise he
+    
     except Exception as e:
+        print(f"❌ Doctor registration error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Registration failed: {str(e)}"
         )
+
 
 @router.post("/change-password")
 async def change_password(
@@ -92,7 +149,8 @@ async def change_password(
     token_data: TokenData = Depends(get_current_doctor)
 ):
     """Change doctor password"""
-    doctor = db_manager.doctors.find_one({"email": token_data.email.lower()})
+    target_email = token_data.email.lower().strip()
+    doctor = db_manager.doctors.find_one({"email": target_email})
     
     if not doctor:
         raise HTTPException(
@@ -109,16 +167,18 @@ async def change_password(
     
     # Update password
     db_manager.doctors.update_one(
-        {"email": token_data.email.lower()},
+        {"email": target_email},
         {"$set": {"password": hash_password(password_data.new_password)}}
     )
     
     return {"message": "Password changed successfully"}
 
+
 @router.get("/me")
 async def get_doctor_profile(token_data: TokenData = Depends(get_current_doctor)):
     """Get current doctor's profile"""
-    doctor = db_manager.doctors.find_one({"email": token_data.email.lower()})
+    target_email = token_data.email.lower().strip()
+    doctor = db_manager.doctors.find_one({"email": target_email})
     
     if not doctor:
         raise HTTPException(
