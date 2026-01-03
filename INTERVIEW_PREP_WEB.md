@@ -1,8 +1,17 @@
-# 🎯 Google Interview Preparation - Web Application Version
+# 🎯 Interview Preparation Guide
 
-## 🚀 Opening Statement (30 seconds)
+**Project:** Healthcare Assessment System  
+**Live Demo:** [Add after deployment]  
+**GitHub:** [Add your repo link]  
+**Tech Stack:** FastAPI, Streamlit, MongoDB, AI/ML
 
-> "I transformed a CLI-based medical health assessment chatbot into a production-ready web application. The system features a FastAPI backend with JWT authentication, a Streamlit frontend, MongoDB for encrypted data storage, and optional AI integration via Mistral-7B. It's currently deployed at [your-url] and handles patient registration, doctor consultations, and admin management with enterprise-grade security including AES-256 encryption and role-based access control."
+---
+
+## 🚀 Quick Pitch (30 seconds)
+
+"I built a healthcare assessment system where patients describe symptoms in their native language, and the system analyzes them using AI. It supports 30+ languages, encrypts all sensitive data with AES-256, and provides doctors with clinical insights. The system uses JWT authentication with role-based access control and is deployed on Render and Streamlit Cloud."
+
+**Live at:** [your-url]
 
 ---
 

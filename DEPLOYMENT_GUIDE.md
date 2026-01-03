@@ -1,249 +1,489 @@
-# 🚀 Deployment Guide – Medical Health Assessment Web App
+# 🚀 Deployment Guide - Medical Health Assessment System
 
-This guide contains COMPLETE instructions to run and deploy the Medical Health Assessment Web App
-on Windows, Linux, and macOS.
+Complete guide to deploy your application on Render.com (backend) and Streamlit Cloud (frontend).
 
-====================================================
-PROJECT STRUCTURE
-====================================================
+**Estimated Time:** 2 hours  
+**Cost:** $0 (using free tiers)
 
-IIS_Project_G13_Web/
-│
-├── backend/                 FastAPI backend
-├── frontend/                Streamlit frontend
-├── .env.example             Environment template
-├── start_dev.bat            Windows startup script
-├── start_dev.sh             Linux / macOS startup script
-├── docker-compose.yml
-└── DEPLOYMENT_GUIDE.md
+---
 
-====================================================
-DEVELOPMENT SETUP
-====================================================
+## 📋 Prerequisites
 
-STEP 1: CLONE REPOSITORY
+Before you start:
 
-    git clone <your-repo-url>
-    cd IIS_Project_G13_Web
+- ✅ GitHub account (create at github.com)
+- ✅ MongoDB Atlas account with database created
+- ✅ Your project code ready
 
+---
 
-STEP 2: ENVIRONMENT VARIABLES
+## 🎯 Deployment Overview
 
-Windows (CMD / PowerShell):
+```
+GitHub Repository
+    ├── Render.com (Backend API)
+    └── Streamlit Cloud (Frontend UI)
+         ↓
+    MongoDB Atlas (Database)
+```
 
-    copy .env.example .env
-    notepad .env
+---
 
-Linux / macOS:
+## 📦 STEP 1: Push to GitHub (30 minutes)
 
-    cp .env.example .env
-    nano .env
+### 1.1 Create GitHub Repository
 
-Fill all required values (MongoDB, HuggingFace, Secret Keys).
+1. Go to **github.com**
+2. Click **"New repository"** (green button)
+3. **Repository name:** `healthcare-assessment-system`
+4. **Description:** `AI-powered healthcare assessment with multilingual support`
+5. **Visibility:** Public (so Render/Streamlit can access)
+6. **DON'T** check "Initialize with README" (we have one)
+7. Click **"Create repository"**
 
+### 1.2 Initialize Git (if not already)
 
-STEP 3: CREATE VIRTUAL ENVIRONMENT
+Open Command Prompt in your project folder:
 
-    python -m venv venv
+```bash
+cd C:\Users\zeega\OneDrive\Desktop\IIS_Project_G13_Web
+```
 
+Check if Git is initialized:
+```bash
+git status
+```
 
-STEP 4: ACTIVATE VIRTUAL ENVIRONMENT
+**If you see:** `fatal: not a git repository`
 
-Windows (CMD):
+Then initialize:
+```bash
+git init
+git add .
+git commit -m "Initial commit: Healthcare Assessment System"
+```
 
-    venv\Scripts\activate
+**If you already have Git initialized**, skip to next step.
 
-Windows (PowerShell):
+### 1.3 Connect to GitHub
 
-    .\venv\Scripts\Activate.ps1
+```bash
+git remote add origin https://github.com/YOUR_USERNAME/healthcare-assessment-system.git
+git branch -M main
+git push -u origin main
+```
 
-Linux / macOS:
+**Replace `YOUR_USERNAME`** with your GitHub username!
 
-    source venv/bin/activate
+**If prompted for credentials:**
+- Username: your GitHub username
+- Password: Create a **Personal Access Token** (not your password!)
+  - Go to GitHub.com → Settings → Developer settings → Personal access tokens → Generate new token
+  - Check "repo" scope
+  - Copy token and use as password
 
+### 1.4 Verify Upload
 
-STEP 5: INSTALL DEPENDENCIES
+Go to your GitHub repository in browser - you should see all your files! ✅
 
-Backend:
+---
 
-    cd backend
-    pip install -r requirements.txt
-    cd ..
+## 🔧 STEP 2: Deploy Backend on Render.com (30 minutes)
 
-Frontend:
+### 2.1 Create Render Account
 
-    cd frontend
-    pip install -r requirements.txt
-    cd ..
+1. Go to **render.com**
+2. Click **"Get Started"**
+3. Sign up with GitHub (easiest)
+4. Authorize Render to access your repositories
 
+### 2.2 Create Web Service
 
-STEP 6: START DEVELOPMENT SERVERS
+1. Click **"New +"** → **"Web Service"**
+2. **Connect repository:** Select `healthcare-assessment-system`
+3. Click **"Connect"**
 
-OPTION A (RECOMMENDED): USING STARTUP SCRIPT
+### 2.3 Configure Service
 
-Windows:
+**Basic Settings:**
+- **Name:** `healthcare-backend` (or your choice)
+- **Region:** Choose closest to you
+- **Branch:** `main`
+- **Root Directory:** `backend` ⚠️ **IMPORTANT!**
+- **Runtime:** `Python 3`
 
-    start_dev.bat
+**Build Settings:**
+- **Build Command:**
+  ```bash
+  pip install -r requirements.txt
+  ```
 
-Linux / macOS:
+- **Start Command:**
+  ```bash
+  uvicorn main:app --host 0.0.0.0 --port 10000
+  ```
 
-    chmod +x start_dev.sh
-    ./start_dev.sh
+**Instance Type:**
+- Select **"Free"** ($0/month)
 
+### 2.4 Add Environment Variables
 
-start_dev.bat (WINDOWS CONTENT):
+Click **"Advanced"** → **"Add Environment Variable"**
 
-    @echo off
-    echo Starting Backend...
-    start cmd /k "cd backend && ..\venv\Scripts\activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
-    timeout /t 3 > nul
-    echo Starting Frontend...
-    start cmd /k "cd frontend && ..\venv\Scripts\activate && streamlit run app.py"
+Add these **one by one**:
 
+```env
+MONGODB_URI
+# Paste your MongoDB Atlas connection string
+# Example: mongodb+srv://username:password@cluster.mongodb.net/
 
-start_dev.sh (LINUX / MAC CONTENT):
+MONGODB_DB
+# Value: health_chatbot_db
 
-    #!/bin/bash
-    echo "Starting Backend..."
-    cd backend
-    source ../venv/bin/activate
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
-    sleep 3
-    echo "Starting Frontend..."
-    cd ../frontend
-    source ../venv/bin/activate
-    streamlit run app.py
+SECRET_KEY
+# Generate a random string (32+ characters)
+# Example: your-super-secret-key-change-this-in-production
 
+ENCRYPTION_KEY
+# Generate using Python:
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Paste the output here
 
-OPTION B: MANUAL START
+USE_LLM
+# Value: False
 
-Backend:
+FRONTEND_URL
+# Value: https://healthcare-frontend.streamlit.app
+# (We'll update this after frontend deployment)
 
-    cd backend
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000
+DEBUG
+# Value: False
+```
 
-Frontend:
+**How to generate ENCRYPTION_KEY (on Windows):**
 
-    cd frontend
-    streamlit run app.py
+Open Command Prompt:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
+Copy the output (looks like: `xFJk8L4N...`)
 
-STEP 7: ACCESS APPLICATION
+### 2.5 Deploy!
 
-Frontend:        http://localhost:8501
-Backend API:     http://localhost:8000
-Swagger Docs:    http://localhost:8000/docs
+1. Click **"Create Web Service"**
+2. **Wait 5-10 minutes** (Render installs dependencies)
+3. Watch the logs - should see:
+   ```
+   ✅ MongoDB connection successful
+   ✅ Encryption initialized
+   ✅ Application ready!
+   ```
 
-====================================================
-PRODUCTION DEPLOYMENT
-====================================================
+### 2.6 Get Your Backend URL
 
-OPTION 1: RENDER (BACKEND) + STREAMLIT CLOUD (FRONTEND)
+Once deployed, you'll see:
+```
+Your service is live at https://healthcare-backend.onrender.com
+```
 
-Render Backend:
+**Copy this URL!** You'll need it for frontend.
 
-Build Command:
-    cd backend && pip install -r requirements.txt
+### 2.7 Test Backend
 
-Start Command:
-    cd backend && uvicorn main:app --host 0.0.0.0 --port 10000
+Open in browser:
+```
+https://healthcare-backend.onrender.com/health
+```
 
-Environment Variables:
-    MONGODB_URI=
-    SECRET_KEY=
-    HUGGING_FACE_TOKEN=
-    ENCRYPTION_KEY=
-    FRONTEND_URL=
+Should see:
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "llm": "unavailable"
+}
+```
 
+✅ **Backend deployed!**
 
-Streamlit Cloud Frontend:
+---
 
-Secrets:
-    API_BASE_URL="https://your-backend.onrender.com"
+## 🎨 STEP 3: Deploy Frontend on Streamlit Cloud (30 minutes)
 
+### 3.1 Create Streamlit Account
 
-OPTION 2: DOCKER (WINDOWS / LINUX / MAC)
+1. Go to **share.streamlit.io**
+2. Click **"Sign up"**
+3. **Sign in with GitHub** (recommended)
+4. Authorize Streamlit
 
-Build & Start:
-    docker-compose up -d
+### 3.2 Deploy App
 
-View Logs:
-    docker-compose logs -f
+1. Click **"New app"**
+2. **Repository:** Select `healthcare-assessment-system`
+3. **Branch:** `main`
+4. **Main file path:** `frontend/app.py` ⚠️ **IMPORTANT!**
+5. **App URL:** Choose your subdomain
+   - Example: `healthcare-frontend` → `healthcare-frontend.streamlit.app`
 
-Stop:
-    docker-compose down
+### 3.3 Add Secrets
 
+Click **"Advanced settings"** → **"Secrets"**
 
-OPTION 3: AWS EC2 (UBUNTU 22.04)
+Add this (in TOML format):
 
-Instance:
-    t2.medium or higher
-    Open ports: 22, 80, 443, 8000, 8501
+```toml
+API_BASE_URL = "https://healthcare-backend.onrender.com"
+```
 
-Server Setup:
-    sudo apt update && sudo apt upgrade -y
-    sudo apt install python3-pip python3-venv nginx -y
+**⚠️ Replace** `healthcare-backend.onrender.com` **with YOUR Render URL from Step 2.6!**
 
-App Setup:
-    git clone <your-repo-url>
-    cd IIS_Project_G13_Web
-    python3 -m venv venv
-    source venv/bin/activate
+### 3.4 Deploy!
 
-Install Dependencies:
-    cd backend && pip install -r requirements.txt && cd ..
-    cd frontend && pip install -r requirements.txt && cd ..
+1. Click **"Deploy!"**
+2. **Wait 3-5 minutes** (installs dependencies)
+3. Watch logs for:
+   ```
+   ✅ Backend API connected!
+   ```
 
-Environment Variables:
-    cp .env.example .env
-    nano .env
+### 3.5 Get Your Frontend URL
 
-====================================================
-SECURITY CHECKLIST
-====================================================
+You'll see:
+```
+https://healthcare-frontend.streamlit.app
+```
 
-- Change SECRET_KEY
-- Use MongoDB Atlas with IP whitelist
-- Enable HTTPS (Let’s Encrypt)
-- Disable DEBUG mode
-- Never commit .env
-- Restrict CORS to frontend domain
-- Enable rate limiting
-- Enable logging & monitoring
-- Regular database backups
+**This is your live app!** 🎉
 
-====================================================
-MONITORING & LOGS
-====================================================
+---
 
-Health Check:
-    GET /health
+## 🔄 STEP 4: Update CORS (5 minutes)
 
-Docker Logs:
-    docker-compose logs -f backend
-    docker-compose logs -f frontend
+Now that you have your frontend URL, update backend CORS:
 
-Linux Systemd Logs:
-    sudo journalctl -u health-backend -f
-    sudo journalctl -u health-frontend -f
+### 4.1 Go to Render Dashboard
 
-====================================================
-TROUBLESHOOTING
-====================================================
+1. Open **render.com**
+2. Go to your **healthcare-backend** service
+3. Click **"Environment"**
 
-Check MongoDB Connection:
-    python -c "from pymongo import MongoClient; MongoClient('your_uri').server_info()"
+### 4.2 Update FRONTEND_URL
 
-Port Already in Use (Windows):
-    netstat -ano | findstr :8000
-    taskkill /PID <PID> /F
+Find `FRONTEND_URL` variable and change to:
+```
+https://healthcare-frontend.streamlit.app
+```
 
-Port Already in Use (Linux / macOS):
-    lsof -i :8000
-    kill -9 <PID>
+(Use YOUR actual Streamlit URL!)
 
-====================================================
-DONE
-====================================================
+### 4.3 Redeploy
 
-Your Medical Health Assessment Web App is ready to run and deploy.
+Click **"Manual Deploy"** → **"Deploy latest commit"**
+
+Wait 2-3 minutes for restart.
+
+---
+
+## ✅ STEP 5: Test Everything (15 minutes)
+
+### 5.1 Test Patient Registration
+
+1. Go to your Streamlit URL
+2. Click **"Patient Registration"** tab
+3. Fill form with test data:
+   - Name: Test Patient
+   - Age: 25
+   - Email: test@example.com
+   - Phone: 1234567890
+   - Password: test123
+   - Symptoms: "I have headache and fever for 3 days"
+4. Click **"Analyze My Symptoms"**
+5. Should see detected symptoms ✅
+6. Click **"Complete Registration"**
+7. Should login automatically ✅
+
+### 5.2 Test Doctor Login
+
+1. Register a doctor (will need admin approval)
+2. Login as admin (create first admin if none exists)
+3. Approve doctor
+4. Login as doctor
+5. View patient records ✅
+
+### 5.3 Test PDF Download
+
+1. Login as patient
+2. Go to **"Profile"** tab
+3. Click **"Download PDF Report"**
+4. Should download PDF ✅
+
+---
+
+## 🎯 STEP 6: Update Documentation (10 minutes)
+
+### 6.1 Update README.md
+
+Replace this line:
+```markdown
+**🌐 Live Demo:** [Your URL Here]
+```
+
+With:
+```markdown
+**🌐 Live Demo:** https://healthcare-frontend.streamlit.app
+```
+
+### 6.2 Update Your Resume
+
+Add to your resume:
+```
+Healthcare Assessment System | FastAPI, Streamlit, MongoDB
+• Deployed full-stack application with 30+ language support
+• Live at: healthcare-frontend.streamlit.app
+• GitHub: github.com/username/healthcare-assessment-system
+```
+
+### 6.3 Push Updates
+
+```bash
+git add README.md
+git commit -m "Update README with live demo URL"
+git push
+```
+
+---
+
+## 📊 Monitoring & Maintenance
+
+### Check Backend Logs
+
+Render.com Dashboard → Your service → **"Logs"** tab
+
+### Check Frontend Logs
+
+Streamlit Cloud → Your app → **"Manage app"** → **"Logs"**
+
+### Update Code
+
+```bash
+# Make changes locally
+git add .
+git commit -m "Your update message"
+git push
+
+# Backend: Auto-redeploys (Render watches GitHub)
+# Frontend: Auto-redeploys (Streamlit watches GitHub)
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Backend shows "Service Unavailable"
+
+**Check:**
+1. Environment variables set correctly?
+2. MongoDB Atlas IP whitelist → Allow access from anywhere (0.0.0.0/0)
+3. Check logs in Render dashboard
+
+**Fix:** Ensure `MONGODB_URI` is correct and MongoDB allows connections.
+
+### Frontend can't connect to backend
+
+**Check:**
+1. `API_BASE_URL` in Streamlit secrets correct?
+2. Backend URL ends with `.onrender.com` (no trailing slash)?
+3. Backend is actually running? (test `/health` endpoint)
+
+**Fix:** Update Streamlit secrets with correct backend URL.
+
+### "Cannot connect to database"
+
+**Check:**
+1. MongoDB Atlas cluster is running?
+2. Database user credentials correct in `MONGODB_URI`?
+3. IP whitelist allows 0.0.0.0/0?
+
+**Fix:** In MongoDB Atlas → Network Access → Add IP Address → Allow access from anywhere.
+
+### Deployment fails on Render
+
+**Check logs for:**
+- Dependency installation errors → Check `requirements.txt`
+- Port binding errors → Ensure using `--port 10000`
+- Import errors → Check all files committed to GitHub
+
+### Streamlit app crashes
+
+**Check:**
+- Backend URL correct in secrets?
+- All dependencies in `requirements.txt`?
+- No missing files in GitHub?
+
+---
+
+## 💡 Pro Tips
+
+### Free Tier Limitations
+
+**Render.com (Free):**
+- ✅ Sleeps after 15 min inactivity
+- ⏱️ First request takes 30-60s to wake up
+- ✅ Good enough for portfolio/resume
+- 💡 Upgrade to $7/month for always-on
+
+**Streamlit Cloud (Free):**
+- ✅ Always on
+- ✅ Unlimited apps (public repos)
+- ✅ Auto-updates from GitHub
+
+### Performance Optimization
+
+**If backend is slow:**
+1. Ensure `USE_LLM=False` (already set ✅)
+2. Add indexes to MongoDB (see docs)
+3. Enable caching in Streamlit
+
+### Security Checklist
+
+- ✅ `DEBUG=False` in production
+- ✅ Strong `SECRET_KEY` (32+ characters)
+- ✅ Unique `ENCRYPTION_KEY`
+- ✅ Never commit `.env` file
+- ✅ MongoDB user has read/write only (not admin)
+
+---
+
+## 🎉 Success!
+
+You now have:
+
+- ✅ Backend API running on Render.com
+- ✅ Frontend UI on Streamlit Cloud
+- ✅ Database on MongoDB Atlas
+- ✅ HTTPS enabled (automatic)
+- ✅ Auto-deployment from GitHub
+- ✅ Professional portfolio project
+
+**Share your live URL with recruiters!** 🚀
+
+---
+
+## 📞 Need Help?
+
+**If stuck:**
+1. Check logs (Render/Streamlit dashboards)
+2. Google error messages
+3. Check MongoDB Atlas network access
+4. Verify environment variables
+
+**Common URLs to check:**
+- Backend health: `https://your-backend.onrender.com/health`
+- API docs: `https://your-backend.onrender.com/docs`
+- Frontend: `https://your-app.streamlit.app`
+
+---
+
+**Deployment Complete! Time to update your resume and start applying! 💼**
