@@ -45,6 +45,10 @@ class PasswordChange(BaseModel):
 class DemographicUpdate(BaseModel):
     demographic: PatientDemographic
 
+class SymptomAnalysisRequest(BaseModel):
+    description: str
+    source_language: str = "auto"
+
 class SymptomUpdate(BaseModel):
     per_symptom: Dict[str, SymptomDetail]
 
@@ -605,25 +609,31 @@ async def change_password(
 @router.post("/analyze-symptoms", response_model=SymptomAnalysisResponse)
 async def analyze_symptoms(request: SymptomAnalysisRequest):
     """
-    FIXED: Analyze symptoms with COMPLETE LLM integration
-    - Detects symptoms
-    - Extracts ALL details (duration, severity, frequency, factors)
-    - Generates intelligent follow-up questions
+    ✅ FIXED: Analyze symptoms with language awareness
+    - Detects symptoms (multilingual support)
+    - Extracts details (enhanced regex)
+    - Generates questions
     """
     print(f"\n🔍 ANALYZING SYMPTOMS: {request.description}")
+    print(f"   Language: {request.source_language}")
     
-    # STEP 1: Identify symptoms using LLM
-    symptoms = llm_manager.identify_symptoms(request.description)
+    # STEP 1: Identify symptoms
+    symptoms = llm_manager.identify_symptoms(
+        request.description,
+        source_lang=request.source_language
+    )
     print(f"✅ Identified symptoms: {symptoms}")
     
-    # STEP 2: Extract details for EACH symptom using LLM
-    extracted_details = llm_manager.extract_symptom_details(request.description)
+    # STEP 2: Extract details
+    extracted_details = llm_manager.extract_symptom_details(
+        request.description,
+        source_lang=request.source_language
+    )
     print(f"✅ Extracted details: {extracted_details}")
     
-    # STEP 3: Generate intelligent follow-up questions
+    # STEP 3: Generate follow-up questions
     questions = []
     if symptoms:
-        # Generate questions for the primary symptom
         questions = llm_manager.generate_questions(symptoms[0], extracted_details)
         print(f"✅ Generated {len(questions)} follow-up questions")
     

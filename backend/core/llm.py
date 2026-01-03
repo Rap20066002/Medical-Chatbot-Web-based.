@@ -9,7 +9,7 @@ import re
 from core.config import settings
 
 class LLMManager:
-    """Manages LLM operations for health conversations."""
+    """Manages LLM operations with enhanced multilingual support."""
     
     def __init__(self):
         """Initialize LLM manager."""
@@ -87,15 +87,50 @@ class LLMManager:
         print("⚠️  Using fallback symptom list")
         return ["headache", "fever", "cough", "pain", "nausea", "vomiting", "dizziness"]
     
-    def identify_symptoms(self, text):
+    def _translate_to_english(self, text, source_lang="auto"):
+        """
+        ✅ FIXED: Better translation with 'auto' handling
+        """
+        if not text:
+            return text
+        
+        # If source is English or unknown, don't translate
+        if source_lang in ["en", "auto", None, ""]:
+            print(f"   📝 Skipping translation (source: {source_lang})")
+            return text
+        
+        try:
+            from deep_translator import GoogleTranslator
+            
+            print(f"   🌐 Translating from {source_lang} to English...")
+            
+            translator = GoogleTranslator(source=source_lang, target="en")
+            translated = translator.translate(text)
+            
+            print(f"   ✅ Translation result: {translated}")
+            return translated
+        
+        except Exception as e:
+            print(f"   ⚠️  Translation failed: {e}")
+            print(f"   📝 Using original text")
+            return text
+    
+    def identify_symptoms(self, text, source_lang="auto"):
         """
         FIXED: Properly identify medical symptoms (not attributes)
         """
         text_lower = text.lower()
+
+        print(f"   📋 Source language: {source_lang}")
+        print(f"   📝 Original text: {text[:100]}...")
         
         # Try LLM with BETTER prompt
         if self.use_llm and self.llm:
             try:
+                # LLM works best with English - translate if needed
+                text_for_llm = text_lower
+                if source_lang not in ["en", "auto", None, ""]:
+                    text_for_llm = self._translate_to_english(text_lower, source_lang)
                 # CRITICAL FIX: More explicit prompt
                 prompt = f"""<s>[INST] You are a medical AI assistant. Extract ONLY the medical symptoms/conditions from this patient's description. 
 
@@ -114,42 +149,33 @@ ONLY include actual medical symptoms like:
 - chest pain
 etc.
 
-Patient says: "{text}"
+Patient says: "{text_for_llm}"
 
 List ONLY medical symptoms, comma-separated, no other words:
 [/INST]"""
                 
                 response = self.llm(prompt, max_new_tokens=60)
-                
-                # Clean response aggressively
                 response = response.strip().lower()
                 response = response.replace("symptoms:", "").replace("the symptoms are:", "")
                 response = response.replace("medical symptoms:", "").strip()
                 
-                # Split and filter
                 symptoms = [s.strip() for s in response.split(',')]
                 
-                # CRITICAL FILTER: Remove non-symptoms
-                filtered = []
+                # Filter out non-symptoms
                 invalid_words = [
                     'severe', 'mild', 'daily', 'weekly', 'every', 'morning', 'evening',
                     'day', 'days', 'week', 'weeks', 'month', 'constant', 'frequent',
-                    'out of', '/10', 'intensity', 'pain level', 'worsening', 'improving',
-                    'the patient', 'patient has', 'experiencing'
+                    'out of', '/10', 'intensity', 'pain level'
                 ]
                 
+                filtered = []
                 for symptom in symptoms:
                     symptom = symptom.strip()
                     
-                    # Skip if contains invalid words
                     if any(inv in symptom for inv in invalid_words):
                         continue
-                    
-                    # Skip if too short or too long
                     if len(symptom) < 3 or len(symptom) > 40:
                         continue
-                    
-                    # Skip if all numbers or punctuation
                     if not any(c.isalpha() for c in symptom):
                         continue
                     
@@ -157,42 +183,62 @@ List ONLY medical symptoms, comma-separated, no other words:
                 
                 if filtered:
                     print(f"✅ LLM identified symptoms: {filtered}")
-                    return filtered[:5]  # Max 5 symptoms
+                    return filtered[:5]
                 
             except Exception as e:
                 print(f"⚠️ LLM symptom extraction error: {e}")
         
         # Fallback: Enhanced keyword matching
         print(f"🔍 Using keyword matching fallback")
-        matched_symptoms = []
+    
+        # STEP 1: Translate to English if needed
+        text_english = text_lower
         
-        # Match against knowledge base
+        if source_lang not in ["en", "auto", None, ""]:
+            print(f"   🌐 Need to translate from {source_lang}...")
+            text_english = self._translate_to_english(text_lower, source_lang)
+            
+            if text_english and text_english != text_lower:
+                print(f"   ✅ Translated text: {text_english[:100]}...")
+                text_english = text_english.lower()
+            else:
+                print(f"   ⚠️  Translation failed or returned same text")
+        else:
+            print(f"   📝 Text is English or auto-detected, no translation needed")
+        
+        # STEP 2: Match against English symptom list
+        matched_symptoms = []
         for symptom in self.symptoms_list:
             symptom_lower = symptom.lower().strip()
             
-            # Use word boundaries for better matching
-            if re.search(r'\b' + re.escape(symptom_lower) + r'\b', text_lower):
-                # Additional validation: is this actually a symptom?
+            if re.search(r'\b' + re.escape(symptom_lower) + r'\b', text_english):
                 if symptom_lower not in matched_symptoms:
                     matched_symptoms.append(symptom_lower)
+                    print(f"   ✅ Matched symptom: {symptom_lower}")
         
         if matched_symptoms:
             print(f"✅ Keyword matching found: {matched_symptoms[:5]}")
             return matched_symptoms[:5]
         
-        # Ultimate fallback
         print("⚠️ No specific symptoms detected")
         return ["general health concern"]
     
-    def extract_symptom_details(self, text):
+    def extract_symptom_details(self, text, source_lang="auto"):
         """
         FIXED: Extract temporal/severity details (not symptoms themselves)
         """
         details = {}
         text_lower = text.lower()
         
+        print(f"   📋 Extracting details from: {source_lang} text")
+        
+        # Try LLM first
         if self.use_llm and self.llm:
             try:
+                # Translate for LLM if needed
+                text_for_llm = text_lower
+                if source_lang not in ["en", "auto", None, ""]:
+                    text_for_llm = self._translate_to_english(text_lower, source_lang)
                 # BETTER prompt with clear format
                 prompt = f"""<s>[INST] Extract ONLY temporal and severity information from this text.
 
@@ -202,26 +248,21 @@ Severity: [pain scale or description, e.g., "8/10", "severe", or "Not mentioned"
 Frequency: [how often, e.g., "daily", "3 times per day", or "Not mentioned"]
 Factors: [triggers/worsening factors, or "Not mentioned"]
 
-Text: "{text}"
+Text: "{text_for_llm}"
 
 Extracted information:
 [/INST]"""
                 
                 response = self.llm(prompt, max_new_tokens=120)
-                
-                # Parse line by line
+            
                 for line in response.split('\n'):
                     line = line.strip()
                     if ':' in line:
                         parts = line.split(':', 1)
                         if len(parts) == 2:
                             key = parts[0].strip()
-                            value = parts[1].strip()
+                            value = parts[1].strip().replace('[', '').replace(']', '').strip()
                             
-                            # Clean value
-                            value = value.replace('[', '').replace(']', '').strip()
-                            
-                            # Only keep if meaningful
                             if value and value.lower() not in ['not mentioned', 'not specified', 'n/a', 'none']:
                                 details[key] = value
                 
@@ -233,52 +274,73 @@ Extracted information:
                 print(f"⚠️ LLM extraction error: {e}")
         
         # Regex fallback
-        print(f"🔍 Using regex extraction")
+        print(f"🔍 Using enhanced regex extraction")
+    
+        # Translate to English for regex matching
+        text_english = text_lower
+        if source_lang not in ["en", "auto", None, ""]:
+            print(f"   🌐 Translating for regex matching...")
+            text_english = self._translate_to_english(text_lower, source_lang)
+            if text_english:
+                text_english = text_english.lower()
+                print(f"   ✅ Will search in: {text_english[:100]}...")
         
         # Duration patterns
         duration_patterns = [
             r'for\s+(?:the\s+)?(?:past\s+)?(?:last\s+)?(\d+\s+(?:day|days|week|weeks|month|months|year|years))',
             r'(\d+\s+(?:day|days|week|weeks|month|months))\s+(?:now|ago)',
-            r'since\s+(yesterday|last\s+\w+)',
+            r'since\s+(yesterday|last\s+\w+|this\s+\w+)',
+            r'from\s+(?:the\s+)?(?:past\s+)?(?:last\s+)?(\d+\s+(?:day|days|week|weeks))',
+            r'(?:been|having|experiencing)\s+(?:this|it)\s+for\s+(\d+\s+(?:day|days|week|weeks))',
         ]
         for pattern in duration_patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text_english)
             if match:
                 details["Duration"] = match.group(1).strip()
+                print(f"  ✅ Found duration: {details['Duration']}")
                 break
         
         # Severity patterns
         severity_patterns = [
             r'(\d+(?:\.\d+)?)\s*(?:out\s+of|/)\s*10',
-            r'\b(severe|mild|moderate|extreme|intense|terrible|unbearable|bad)\b',
+            r'severity\s+(?:is\s+)?(?:about\s+)?(\d+)',
+            r'\b(severe|mild|moderate|extreme|intense|terrible|unbearable|bad|very\s+bad)\b',
+            r'pain\s+(?:is\s+)?(?:about\s+)?(\d+)',
         ]
         for pattern in severity_patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text_english)
             if match:
                 details["Severity"] = match.group(1).strip()
+                print(f"  ✅ Found severity: {details['Severity']}")
                 break
         
         # Frequency patterns
         frequency_patterns = [
-            r'(every\s+(?:day|morning|evening|night|hour))',
-            r'(daily|hourly|constantly|frequently)',
+            r'(every\s+(?:day|morning|evening|night|hour|few\s+hours))',
+            r'(daily|hourly|constantly|frequently|occasionally)',
             r'(\d+\s+times?\s+(?:a|per)\s+(?:day|week|hour))',
+            r'(all\s+day|throughout\s+the\s+day)',
+            r'(in\s+the\s+(?:morning|evening|night))',
         ]
         for pattern in frequency_patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text_english)
             if match:
                 details["Frequency"] = match.group(1).strip()
+                print(f"  ✅ Found frequency: {details['Frequency']}")
                 break
         
         # Factors/Triggers
         factor_patterns = [
-            r'(?:worse|triggered|worsens?|aggravated)\s+(?:by|when|with|after)\s+([^.,!?]+)',
-            r'(?:especially|particularly)\s+(?:in|during|when)\s+([^.,!?]+)',
+            r'(?:worse|worsens?|triggered|aggravated)\s+(?:by|when|with|after)\s+([^.,!?]+)',
+            r'(?:especially|particularly)\s+(?:in|during|when|after)\s+([^.,!?]+)',
+            r'(?:caused|triggered)\s+by\s+([^.,!?]+)',
+            r'after\s+([^.,!?]+)',
         ]
         for pattern in factor_patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text_english)
             if match:
                 details["Factors"] = match.group(1).strip()
+                print(f"  ✅ Found factors: {details['Factors']}")
                 break
         
         if details:
