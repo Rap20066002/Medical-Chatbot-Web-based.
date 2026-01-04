@@ -92,7 +92,7 @@ async def validation_exception_handler(request, exc):
     """Handle Pydantic validation errors with user-friendly messages"""
     errors = exc.errors()
     
-    # Extract the most relevant error message
+    # Extract the most relevant error messages
     if errors:
         first_error = errors[0]
         field = first_error.get('loc', [''])[-1]

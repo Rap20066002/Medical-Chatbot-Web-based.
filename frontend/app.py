@@ -1412,7 +1412,7 @@ def show_patient_dashboard():
                     else:
                         st.warning("⏳ Complex analysis taking longer than usual...")
                 
-                # Auto-refresh controls
+                # Auto-refresh control
                 st.markdown("---")
                 col1, col2 = st.columns(2)
                 
