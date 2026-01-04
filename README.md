@@ -526,7 +526,7 @@ The deployed version uses `USE_LLM=False` for optimal performance:
 **Institution:** Indraprastha Institute of Information Technology Delhi (IIIT-D)  
 **Year:** 2nd Year (2024-2025)  
 **Duration:** 2 weeks development + 4 months course project timeline  
-**Team Size:** 6
+**Team Size:** 3
 
 **Learning Outcomes:**
 - Full-stack web application development
