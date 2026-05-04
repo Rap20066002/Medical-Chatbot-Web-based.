@@ -11,7 +11,7 @@
 
 "I built a healthcare assessment system where patients describe symptoms in their native language, and the system analyzes them using AI. It supports 30+ languages, encrypts all sensitive data with AES-256, and provides doctors with clinical insights. The system uses JWT authentication with role-based access control and is deployed on Render and Streamlit Cloud."
 
-**Live at:** [your-url]
+**Live at:** [[your-url](https://healthcare-frontend.streamlit.app/)]
 
 ---
 
