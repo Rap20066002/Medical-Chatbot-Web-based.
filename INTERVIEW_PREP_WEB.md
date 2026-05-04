@@ -1,8 +1,8 @@
 # 🎯 Interview Preparation Guide
 
 **Project:** Healthcare Assessment System  
-**Live Demo:** [ ](https://healthcare-frontend.streamlit.app/)
-**GitHub:** [ ](https://github.com/Rap20066002/Medical-Chatbot-Web-based..git)  
+**Live Demo:** [[Add live_demo_link](https://healthcare-frontend.streamlit.app/)]
+**GitHub:** [[Github repo](https://github.com/Rap20066002/Medical-Chatbot-Web-based..git)]  
 **Tech Stack:** FastAPI, Streamlit, MongoDB, AI/ML
 
 ---
